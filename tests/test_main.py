@@ -9,7 +9,7 @@ from fakes import FakeNotifier, FakeSource, make_lot
 
 import main as bot
 import notifier as notifier_module
-from filters import LotFilter
+from filters import LotFilter, fingerprint
 from notifier import ConsoleNotifier, TelegramNotifier
 from storage import Storage
 
@@ -66,6 +66,52 @@ def test_keyword_found_only_in_lot_details_still_matches(storage):
     assert "<b>Услуги печатные</b>" in notifier.sent[0]
 
 
+def test_same_lot_under_another_number_is_sent_once(storage):
+    copy = {"customer": "Хокимият", "price": 500.0}
+    source = FakeSource([make_lot("1", **copy), make_lot("2", title=" изготовление БАННЕРА ", **copy)])
+    stats, notifier = scan(source, storage)
+    assert stats == {"listed": 2, "new": 2, "in_region": 2, "sent": 1}
+    assert len(notifier.sent) == 1
+    assert "https://example.test/lot/1" in notifier.sent[0]
+    assert scan(source, storage)[0]["new"] == 0   # копию запомнили, больше не рассматриваем
+
+
+def test_same_lot_on_another_platform_is_sent_once(storage):
+    copy = {"customer": "Хокимият", "price": 500.0}
+    scan(FakeSource([make_lot("1", source="a", **copy)], key="a"), storage)
+    stats, notifier = scan(FakeSource([make_lot("77", source="b", **copy)], key="b"), storage)
+    assert (stats["sent"], notifier.sent) == (0, [])
+
+
+def test_copy_of_a_lot_is_recorded_as_not_sent(storage):
+    copy = {"customer": "Хокимият", "price": 500.0}
+    scan(FakeSource([make_lot("1", **copy), make_lot("2", **copy)]), storage)
+    assert remembered(storage) == {"1": True, "2": False}
+
+
+def test_lots_that_differ_are_both_sent(storage):
+    source = FakeSource([make_lot("1", customer="Хокимият", price=500.0), make_lot("2", customer="Банк", price=500.0),
+                         make_lot("3", customer="Хокимият", price=900.0)])
+    assert scan(source, storage)[0]["sent"] == 3
+
+
+def test_expired_copy_does_not_block_a_new_announcement(storage):
+    copy = {"customer": "Хокимият", "price": 500.0}
+    storage.mark("fake", "old", True, "Изготовление баннера", fingerprint(make_lot("x", **copy)), "2000-01-01T00:00:00")
+    assert scan(FakeSource([make_lot("1", **copy)]), storage)[0]["sent"] == 1
+
+
+def test_copy_found_only_after_details_are_loaded_is_not_sent(storage):
+    # у некоторых площадок настоящее название появляется только в подробностях
+    class Enriching(FakeSource):
+        def enrich(self, client, lot):
+            lot.title = "Баннер для школы"
+            return lot
+
+    source = Enriching([make_lot("1", title="Услуги рекламные"), make_lot("2", title="Услуги прочие рекламные")])
+    assert scan(source, storage)[0]["sent"] == 1
+
+
 def test_lot_from_other_region_is_skipped_without_loading_details(storage):
     source = FakeSource([make_lot("1", region="Сурхандарьинская область")])
     stats, notifier = scan(source, storage)
@@ -118,7 +164,7 @@ def test_dry_run_shows_lots_but_remembers_nothing(storage):
 
 
 def test_lot_whose_details_failed_is_retried_next_time_and_others_go_on(storage, caplog):
-    source = FakeSource([make_lot("1"), make_lot("2")], broken_ids={"1"})
+    source = FakeSource([make_lot("1", customer="Хокимият"), make_lot("2", customer="Банк")], broken_ids={"1"})
     with caplog.at_level(logging.WARNING):
         stats, notifier = scan(source, storage)
     assert stats == {"listed": 2, "new": 2, "in_region": 2, "sent": 1}
@@ -270,7 +316,9 @@ def test_real_config_enables_xt_xarid_with_a_minute_between_requests():
     assert cfg["sources"]["xt_xarid"] is True
     assert cfg["host_pauses"]["api.xt-xarid.uz"] >= 61     # из-за рубежа сайт даёт 1 запрос в 60 секунд
     assert "33.2466" in cfg["xt_xarid_regions"]            # Ферганская область
-    assert "xt_xarid" in [source.key for source in bot.ALL_SOURCES]
+    for key in ("xt_xarid", "uzex_civil", "tendergpt"):
+        assert cfg["sources"][key] is True
+        assert key in [source.key for source in bot.ALL_SOURCES]
 
 
 # --- .env ---

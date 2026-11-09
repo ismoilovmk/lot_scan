@@ -44,14 +44,15 @@ def join_region(*parts) -> str:
     return ", ".join(p.strip() for p in parts if p and p.strip())
 
 
-def paged(client, url: str, origin: str, body: dict, page_size: int = 100, max_rows: int | None = None):
+def paged(client, url: str, origin: str, body: dict, page_size: int = 100, max_rows: int | None = None,
+          keys: tuple[str, str] = ("from", "to")):
     """Постранично читает списки UzEX: строки нумеруются с 1, границы from/to включительно."""
     start = 1
     while True:
         end = start + page_size - 1
         if max_rows is not None:
             end = min(end, max_rows)
-        rows = client.post_json(url, origin, {**body, "from": start, "to": end})
+        rows = client.post_json(url, origin, {**body, keys[0]: start, keys[1]: end})
         if not rows:
             return
         yield from rows

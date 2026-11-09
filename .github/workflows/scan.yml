@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write   # база просмотренных лотов сохраняется в ветку state
 
 jobs:
   scan:
@@ -34,10 +34,27 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # База уже отправленных лотов хранится в кэше GitHub: сервер каждый раз чистый.
-      # Если кэш пропадёт, бот один раз пришлёт открытые лоты заново.
+      # База отправленных лотов живёт в ветке state: сервер каждый раз чистый, а кэш GitHub может
+      # пропасть, и тогда бот прислал бы всё заново. Ошибка чтения ветки останавливает проход.
       - name: Достать базу просмотренных лотов
+        id: state
         if: ${{ !inputs.dry_run }}
+        run: |
+          code=0
+          git ls-remote --exit-code --heads origin state > /dev/null || code=$?
+          if [ "$code" = 0 ]; then
+            git fetch --depth=1 origin state
+            git show FETCH_HEAD:lots.db > lots.db
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = 2 ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            exit "$code"
+          fi
+
+      # Только на первый запуск после перехода с кэша на ветку state.
+      - name: Перенести базу из кэша
+        if: ${{ !inputs.dry_run && steps.state.outputs.found == 'false' }}
         uses: actions/cache/restore@v6
         with:
           path: lots.db
@@ -51,8 +68,14 @@ jobs:
         run: python main.py run ${{ inputs.dry_run && '--dry-run' || '' }}
 
       - name: Сохранить базу
-        if: ${{ always() && !inputs.dry_run }}
-        uses: actions/cache/save@v6
-        with:
-          path: lots.db
-          key: lots-db-${{ github.run_id }}-${{ github.run_attempt }}
+        if: ${{ always() && !inputs.dry_run && hashFiles('lots.db') != '' }}
+        env:
+          GIT_AUTHOR_NAME: lot-scan
+          GIT_AUTHOR_EMAIL: lot-scan@users.noreply.github.com
+          GIT_COMMITTER_NAME: lot-scan
+          GIT_COMMITTER_EMAIL: lot-scan@users.noreply.github.com
+        run: |
+          blob=$(git hash-object -w --no-filters lots.db)
+          tree=$(printf '100644 blob %s\tlots.db\n' "$blob" | git mktree)
+          commit=$(git commit-tree "$tree" -m "База просмотренных лотов")
+          git push --force origin "$commit:refs/heads/state"

@@ -97,3 +97,25 @@ def test_real_catalogue_names_are_found(name):
 ])
 def test_similar_but_unrelated_names_are_not_found(name):
     assert FILTER.match_keywords(name) == [], name
+
+
+@pytest.mark.parametrize("address", [
+    "Ферганская область", "Фарғона вилояти", "Farg'ona viloyati",
+    "Кува тумани", "Quva tumani", "Қува тумани",
+    "Ташлакский район", "Тошлоқ тумани", "Toshloq tumani",
+    "Багдадский район", "Боғдод тумани", "Bog'dod tumani",
+    "Учкуприкский район", "Учкўприк тумани", "Uchko'prik tumani",
+    "Фуркатский район", "Фурқат тумани", "Furqat tumani",
+    "Дангаринский район", "Данғара тумани", "Dang'ara tumani",
+    "Сохский район", "Сўх тумани", "So'x tumani",
+    "Ахунбабаевский район", "Охунбобоев тумани", "Oxunboboyev tumani",
+    "Куштепинский район", "Қўштепа тумани", "Qo'shtepa tumani",
+    "Коканд", "Қўқон шаҳри", "Маргилан", "Марғилон шаҳри", "Кувасай", "Риштан", "Алтыарык", "Бешарык", "Язъяван",
+])
+def test_every_part_of_fergana_region_is_recognised(address):
+    assert FILTER.region_ok(address), address
+
+
+@pytest.mark.parametrize("address", ["Сурхандарьинская область, Термез", "Самарканд", "Навоийская область, Кызылтепа"])
+def test_other_regions_are_not_recognised(address):
+    assert not FILTER.region_ok(address), address

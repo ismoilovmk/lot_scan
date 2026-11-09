@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from filters import LotFilter
+from filters import LotFilter, fingerprint
 from http_client import HttpClient
 from notifier import ConsoleNotifier, TelegramNotifier, find_chats, format_lot
 from sources import ALL_SOURCES
@@ -78,13 +78,22 @@ def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: boo
         except RuntimeError as exc:
             log.warning("Лот %s %s: подробности не получены (%s), попробую в следующий раз", lot.source, lot.lot_id, exc)
             continue
-        matched = lot_filter.match_keywords(lot.search_text())
-        if matched:
-            notifier.send(format_lot(lot, matched))  # при ошибке лот не помечается и уйдёт в следующий раз
-            stats["sent"] += 1
+        sent = deliver(lot, lot_filter.match_keywords(lot.search_text()), storage, notifier, now)
+        stats["sent"] += sent
         if not dry_run:
-            storage.mark(lot.source, lot.lot_id, bool(matched), lot.title)
+            storage.mark(lot.source, lot.lot_id, sent, lot.title, fingerprint(lot), lot.deadline)
     return stats
+
+
+def deliver(lot, matched: list[str], storage, notifier, now: datetime) -> bool:
+    """Отправляет подошедший лот, если такой же ещё не отправлялся. True — отправлен."""
+    if not matched:
+        return False
+    if storage.is_duplicate(fingerprint(lot), now.isoformat(timespec="seconds")):
+        log.info("Лот %s %s: такой же уже отправлен, пропускаю", lot.source, lot.lot_id)
+        return False
+    notifier.send(format_lot(lot, matched))  # при ошибке лот не помечается и уйдёт в следующий раз
+    return True
 
 
 def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> list[str]:

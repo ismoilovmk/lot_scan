@@ -23,6 +23,15 @@ def _words(values) -> list[tuple[str, str]]:
     return [(word, normalize(word)) for word in written if word]
 
 
+def fingerprint(lot) -> str:
+    """Признак «это тот же самый лот»: одно название, заказчик и цена, под каким бы номером он ни шёл."""
+    title = normalize(lot.title)
+    if not title:
+        return ""
+    price = lot.price or 0
+    return f"{title}|{normalize(lot.customer)}|{price:.0f}"
+
+
 class LotFilter:
     def __init__(self, cfg: dict):
         self.keywords = _words(cfg.get("keywords"))

@@ -22,6 +22,15 @@ def _positions(value) -> list[dict]:
     return value if isinstance(value, list) else []
 
 
+def position_texts(value) -> list:
+    """Названия, описания и свойства всех позиций лота."""
+    texts = []
+    for item in _positions(value):
+        texts += [item.get("Product_Name"), item.get("Description")]
+        texts += [prop.get("User_Value") for prop in item.get("Js_Properties") or []]
+    return texts
+
+
 class UzexEtender(Source):
     key = "uzex_etender"
     title = "UzEX etender"
@@ -48,10 +57,7 @@ class UzexEtender(Source):
         """Название лота бывает общим («Закупка для школы»), а баннер стоит одной из позиций —
         поэтому в поиск идут все позиции, их свойства и описания."""
         data = client.get_json(f"{API}/GetTrade/{lot.lot_id}/0", ORIGIN)
-        texts = []
-        for item in _positions(data.get("budget_products")) + _positions(data.get("products")):
-            texts += [item.get("Product_Name"), item.get("Description")]
-            texts += [prop.get("User_Value") for prop in item.get("Js_Properties") or []]
+        texts = position_texts(data.get("budget_products")) + position_texts(data.get("products"))
         texts += [data.get("addon_description"), data.get("technical_description"), data.get("description")]
         lot.details = "\n".join(str(text) for text in texts if text)
         return lot

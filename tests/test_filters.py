@@ -1,6 +1,7 @@
 import pytest
 
-from filters import LotFilter, normalize
+from filters import LotFilter, fingerprint, normalize
+from sources.base import Lot
 
 CFG = {
     "keywords": ["реклам", "баннер", "banner", "hajmli harf", "пешлавха"],
@@ -101,3 +102,25 @@ def test_no_regions_configured_means_whole_country():
 
 def test_empty_config_matches_nothing_by_keyword():
     assert LotFilter({}).match_keywords("баннер") == []
+
+
+def lot(title="Баннер 3х6", customer="Хокимият", price=1000.0):
+    return Lot(source="a", source_title="A", lot_id="1", title=title, customer=customer, price=price)
+
+
+def test_same_lot_written_differently_has_same_fingerprint():
+    assert fingerprint(lot()) == fingerprint(lot(title=" БАННЕР  3х6 ", customer="хокимият"))
+    assert fingerprint(lot()) == fingerprint(Lot(source="b", source_title="B", lot_id="99", title="Баннер 3х6",
+                                                 customer="Хокимият", price=1000.0, url="другая ссылка"))
+
+
+def test_different_lots_have_different_fingerprints():
+    assert fingerprint(lot()) != fingerprint(lot(title="Вывеска"))
+    assert fingerprint(lot()) != fingerprint(lot(customer="Банк"))
+    assert fingerprint(lot()) != fingerprint(lot(price=2000.0))
+    assert fingerprint(lot(price=None)) == fingerprint(lot(price=0))
+    assert fingerprint(lot(price=None)) != fingerprint(lot(price=1))
+
+
+def test_lot_without_title_has_no_fingerprint():
+    assert fingerprint(lot(title="  ")) == ""
