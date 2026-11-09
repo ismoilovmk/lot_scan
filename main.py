@@ -82,11 +82,13 @@ def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: boo
     return stats
 
 
-def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> None:
+def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> list[str]:
+    """Один проход по площадкам. Возвращает ключи площадок, которые проверить не удалось."""
     client = HttpClient(pause=float(cfg.get("request_pause_seconds", 0.5)))
     lot_filter = LotFilter(cfg)
     storage = Storage(str(ROOT / "lots.db"))
     enabled = cfg.get("sources") or {}
+    failed = []
     try:
         for source in ALL_SOURCES:
             if only and source.key != only:
@@ -101,8 +103,10 @@ def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> Non
                 )
             except Exception:
                 log.exception("%s: проход прерван из-за ошибки", source.key)
+                failed.append(source.key)
     finally:
         storage.close()
+    return failed
 
 
 def make_notifier(dry_run: bool):
@@ -176,7 +180,9 @@ def main(argv: list[str] | None = None) -> None:
         client = HttpClient(pause=float(cfg.get("request_pause_seconds", 0.5)))
         notifier.send(price_report(client, cfg.get("shop_keywords") or []))
     elif args.command == "run":
-        run_once(cfg, notifier, args.dry_run, args.source)
+        failed = run_once(cfg, notifier, args.dry_run, args.source)
+        if failed:  # ненулевой код выхода: планировщик на сервере увидит неполный проход
+            sys.exit(f"Не удалось проверить площадки: {', '.join(failed)}")
     else:
         interval = int(cfg.get("interval_minutes", 20)) * 60
         while True:

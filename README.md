@@ -25,7 +25,23 @@ python main.py prices           цены конкурентов в Milliy do'kon
 Ключевые слова и регионы меняются в `config.yaml`.
 Уже отправленные лоты хранятся в `lots.db`; если удалить файл, бот пришлёт всё заново.
 
+## Работа по расписанию на GitHub
+Файл `.github/workflows/scan.yml` запускает `python main.py run` каждые 30 минут
+с 08:00 до 19:30 по Ташкенту.
+
+1. В репозитории: Settings → Secrets and variables → Actions → New repository secret.
+   Добавьте два секрета: `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` (значения из `.env`).
+2. Вкладка Actions → «Скан лотов» → Run workflow — запуск вручную, можно с галочкой пробного прохода.
+
+Если проход не смог проверить какую-то площадку, запуск помечается красным и GitHub присылает письмо.
+Пока бот работает на GitHub, не запускайте `python main.py loop` на компьютере: базы у них разные,
+и лоты придут дважды.
+
 ## Проверка кода
 ```
-python -m pytest tests -q
+pip install -r requirements-dev.txt
+python -m pytest -q
+sh quality.sh crap      # CRAP каждой функции ниже 10
+sh quality.sh dry       # дублирование
+sh quality.sh mutate    # мутационные тесты
 ```

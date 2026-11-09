@@ -202,11 +202,24 @@ def test_broken_source_does_not_stop_the_others(project, monkeypatch, caplog):
                 FakeSource([make_lot("2", source="b")], key="b"))
     notifier = FakeNotifier()
     with caplog.at_level(logging.INFO):
-        bot.run_once({**CFG, "sources": {"a": True, "b": True}}, notifier, dry_run=False)
+        failed = bot.run_once({**CFG, "sources": {"a": True, "b": True}}, notifier, dry_run=False)
+    assert failed == ["a"]
     assert len(notifier.sent) == 1
     assert "a: проход прерван из-за ошибки" in caplog.text
     assert "сайт недоступен" in caplog.text
     assert "b: в списке 1, новых 1, в нужном регионе 1, отправлено 1" in caplog.text
+
+
+def test_run_reports_no_failures_when_all_sources_work(project, monkeypatch):
+    use_sources(monkeypatch, FakeSource([make_lot("1", source="a")], key="a"))
+    assert bot.run_once({**CFG, "sources": {"a": True}}, FakeNotifier(), dry_run=False) == []
+
+
+def test_telegram_failure_counts_as_failed_source(project, monkeypatch):
+    use_sources(monkeypatch, FakeSource([make_lot("1", source="a")], key="a"),
+                FakeSource([], key="b"))
+    cfg = {**CFG, "sources": {"a": True, "b": True}}
+    assert bot.run_once(cfg, FakeNotifier(fail=True), dry_run=False) == ["a"]
 
 
 def test_run_remembers_sent_lots_in_project_database(project, monkeypatch):
@@ -464,6 +477,38 @@ def test_cli_loop_repeats_after_configured_interval(cli, monkeypatch, capsys):
         cli("loop", "--dry-run")
     assert naps == [7 * 60, 7 * 60]
     assert capsys.readouterr().out.count("<b>Изготовление баннера</b>") == 2
+
+
+def test_cli_run_ends_with_error_when_a_source_failed_but_still_sends_the_rest(cli, monkeypatch, capsys):
+    # на сервере по коду выхода видно, что проход был неполным (GitHub пришлёт письмо)
+    use_sources(monkeypatch, FakeSource([], key="a", fail_listing=True),
+                FakeSource([make_lot("2", source="b")], key="b"),
+                FakeSource([], key="c", fail_listing=True))
+    (cli.project / "config.yaml").write_text(
+        yaml.safe_dump({**CFG, "sources": {"a": True, "b": True, "c": True}}, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(SystemExit) as stop:
+        cli("run", "--dry-run")
+    assert str(stop.value) == "Не удалось проверить площадки: a, c"
+    assert "https://example.test/lot/2" in capsys.readouterr().out
+
+
+def test_cli_run_ends_quietly_when_everything_worked(cli):
+    cli("run", "--dry-run")   # SystemExit не возникает
+
+
+def test_cli_loop_keeps_going_after_a_failed_source(cli, monkeypatch):
+    use_sources(monkeypatch, FakeSource([], key="a", fail_listing=True))
+    naps = []
+
+    def nap(seconds):
+        naps.append(seconds)
+        if len(naps) == 2:
+            raise StopLoop
+
+    monkeypatch.setattr(bot.time, "sleep", nap)
+    with pytest.raises(StopLoop):
+        cli("loop", "--dry-run")
+    assert len(naps) == 2
 
 
 def test_cli_rejects_unknown_command(cli):

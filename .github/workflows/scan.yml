@@ -1,0 +1,57 @@
+name: Скан лотов
+
+on:
+  schedule:
+    # каждые 30 минут с 08:00 до 19:30 по Ташкенту (в cron время UTC, Ташкент = UTC+5)
+    - cron: "*/30 3-14 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Пробный проход: показать лоты в журнале, ничего не отправлять и не запоминать"
+        type: boolean
+        default: false
+
+# два прохода одновременно писали бы в одну базу — второй ждёт первого
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # База уже отправленных лотов хранится в кэше GitHub: сервер каждый раз чистый.
+      # Если кэш пропадёт, бот один раз пришлёт открытые лоты заново.
+      - name: Достать базу просмотренных лотов
+        if: ${{ !inputs.dry_run }}
+        uses: actions/cache/restore@v6
+        with:
+          path: lots.db
+          key: lots-db-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: lots-db-
+
+      - name: Проверить площадки
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py run ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Сохранить базу
+        if: ${{ always() && !inputs.dry_run }}
+        uses: actions/cache/save@v6
+        with:
+          path: lots.db
+          key: lots-db-${{ github.run_id }}-${{ github.run_attempt }}
