@@ -49,6 +49,27 @@ FILTER = LotFilter(CONFIG)
     "Набор плакатов",
     "Полиграфические услуги",
     "Реклама жойлаштириш хизмати",
+    "Ёриткичли ҳарфларни монтаж қилиш хизмати",
+    "Yoritkichli harflarni ishlab chiqarish xizmati",
+    "Ҳажмли ҳарфларни ўрнатиш хизмати",
+    "Hajmli harflarni o‘rnatish xizmati",
+    "Вивеска",
+    "Viveska",
+    "Акрилдан вивескалар ишлаб чиқариш хизмати",
+    "Ёриткичли қути ишлаб чиқариш хизмати",
+    "Yoritkichli quti ishlab chiqarish xizmati",
+    "Баннерларни йирик форматда чоп этиш хизмати",
+    "Bannerlarni yirik formatda chop etish xizmati",
+    "Ўзи ёпишадиган плёнкада чоп этиш бўйича хизмат",
+    "O'zi yopishadigan plyonkada chop etish bo'yicha xizmat",
+    "Маълумотлар стендини ишлаб чиқариш ва ўрнатиш хизмати",
+    "Ma'lumotlar stendini ishlab chiqarish va o‘rnatish xizmati",
+    "Маълумот тахтачаларини ишлаб чиқариш хизмати",
+    "Ma'lumot taxtachalarini ishlab chiqarish xizmati",
+    "Транспорт воситалари учун ахборот тахтачаси",
+    "Transport vositalari uchun axborot taxtachasi",
+    "Логотип ишлаб чиқариш ва ўрнатиш хизмати",
+    "Logotip ishlab chiqarish va o‘rnatish xizmati",
 ])
 def test_real_catalogue_names_are_found(name):
     assert FILTER.match_keywords(name), name
@@ -67,6 +88,12 @@ def test_real_catalogue_names_are_found(name):
     "Пуфик с металлическим каркасом",
     "Услуга по установке светового оборудования",
     "Рассмотрение рекламаций поставщика",
+    "Лента малярная самоклеящаяся",
+    "Пакеты комбинированные самоклеящиеся для стерилизации",
+    "Площадка монтажная самоклеящаяся",
+    "Бумага самоклеящаяся",
+    "Ўзи ёпишадиган қоғоз пакетлар",
+    "Yog‘och taxtacha",
 ])
 def test_similar_but_unrelated_names_are_not_found(name):
     assert FILTER.match_keywords(name) == [], name
