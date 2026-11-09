@@ -31,13 +31,16 @@ def format_lot(lot: Lot, matched: list[str]) -> str:
     """Текст сообщения в HTML-разметке Telegram."""
     e = html.escape
     title = lot.title if len(lot.title) <= 400 else lot.title[:400] + "…"
+    number = lot.number or lot.lot_id
+    customer = lot.customer or "не указан"
+    region = lot.region or "не указан"
     lines = [
         f"<b>{e(title)}</b>",
         "",
         f"Площадка: {e(lot.source_title)}",
-        f"Лот №: {e(lot.number or lot.lot_id)}",
-        f"Заказчик: {e(lot.customer or 'не указан')}",
-        f"Регион: {e(lot.region or 'не указан')}",
+        f"Лот №: {e(number)}",
+        f"Заказчик: {e(customer)}",
+        f"Регион: {e(region)}",
         f"Стартовая цена: {e(format_price(lot.price, lot.currency))}",
         f"Срок подачи: {e(format_deadline(lot.deadline))}",
         f"Совпало: {e(', '.join(matched))}",

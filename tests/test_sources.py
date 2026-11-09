@@ -52,6 +52,13 @@ def test_paged_keeps_filter_fields_in_every_request():
     assert client.calls[1][2] == {"keyword": "баннер", "from": 3, "to": 4}
 
 
+def test_paged_fails_loudly_when_site_stops_reporting_total():
+    # без общего числа строк нельзя понять, всё ли прочитано; молча отдать одну страницу — потерять лоты
+    client = FakeClient(lambda method, url, body: [{"id": 1}])
+    with pytest.raises(KeyError, match="total_count"):
+        list(paged(client, "url", "origin", {}))
+
+
 def test_join_region_skips_empty_parts():
     assert join_region("город Ташкент", " Юнусабадский район ") == "город Ташкент, Юнусабадский район"
     assert join_region(None, "Чилонзор тумани") == "Чилонзор тумани"
@@ -83,8 +90,14 @@ def etender_site(method, url, body):
 
 
 def test_etender_turns_site_rows_into_lots():
-    lots = list(UzexEtender().list_lots(FakeClient(etender_site), {}))
+    client = FakeClient(etender_site)
+    lots = list(UzexEtender().list_lots(client, {}))
     assert len(lots) == 2
+    # тело запроса снято с сайта: другие значения дают другой список
+    assert [call[2] for call in client.calls] == [
+        {"is_agent": None, "Is_Scientific": None, "System_Id": 0, "typeid": 1, "from": 1, "to": 100},
+        {"is_agent": None, "Is_Scientific": None, "System_Id": 0, "typeid": 2, "from": 1, "to": 100},
+    ]
     lot = lots[0]
     assert (lot.source, lot.lot_id, lot.number) == ("uzex_etender", "523550", "26120012523550")
     assert lot.title == "Tashqi reklama xizmatlari"
@@ -247,6 +260,12 @@ def test_price_report_looks_at_300_offers_at_most():
     rows = [offer("Баннер", "шт", 1000.0)] * 350
     report = price_report(FakeClient(uzex_list(rows)), ["x"])
     assert "всего предложений 350, просмотрено 300" in report
+
+
+def test_price_report_with_single_offer():
+    report = price_report(FakeClient(uzex_list([offer("Баннер", "шт", 1000.0)])), ["баннер"])
+    assert "«баннер»: всего предложений 1, просмотрено 1" in report
+    assert "  • Баннер — 1 предл., за шт: мин 1 000, медиана 1 000, макс 1 000 сум" in report
 
 
 def test_price_report_for_several_words_and_no_offers():

@@ -10,6 +10,11 @@ tool="$1"
 case "$tool" in
   crap)   crapper --coverage-command "$COVERAGE" --threshold 10 "$@" ;;
   dry)    dryer --threshold 0.8 "$@" ;;
-  mutate) mutator --coverage-command "$COVERAGE" --test-command "python -m pytest -q -x -p no:cacheprovider" "$@" ;;
+  # mutator запускает мутантов через символические ссылки, а Windows их не даёт (WinError 1314).
+  # Поэтому mutator только находит места мутаций, а прогоняет их tests/tools/mutation_run.py.
+  # --scan сам покрытие не обновляет, а по нему решает, какие строки покрыты — считаем заново.
+  mutate) sh -c "$COVERAGE" > /dev/null 2>&1 || { echo "Тесты не проходят"; exit 2; }
+          mutator --use-existing-coverage --scan "$@" > target/mutation-sites.txt 2>&1 \
+            && python tests/tools/mutation_run.py target/mutation-sites.txt ;;
   *)      echo "Использование: ./quality.sh crap | dry | mutate"; exit 1 ;;
 esac

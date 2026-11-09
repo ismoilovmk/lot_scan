@@ -52,7 +52,7 @@ def paged(client, url: str, origin: str, body: dict, page_size: int = 100, max_r
         if not rows:
             return
         yield from rows
-        total = rows[0].get("total_count") or 0
+        total = rows[0]["total_count"]  # нет общего числа — падаем, а не молча теряем страницы
         start += len(rows)  # сервер может отдать меньше строк, чем просили
         if start > total or (max_rows is not None and start > max_rows):
             return

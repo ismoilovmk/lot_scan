@@ -31,6 +31,11 @@ def forget_env(monkeypatch, *names):
         monkeypatch.delenv(name)
 
 
+def remembered(storage):
+    """Что бот записал в базу о каждом лоте: {id лота: подошёл ли он}."""
+    return {lot_id: bool(matched) for lot_id, matched in storage.conn.execute("SELECT lot_id, matched FROM lots")}
+
+
 def scan(source, storage, notifier=None, dry_run=False):
     notifier = notifier or FakeNotifier()
     stats = bot.scan_source(source, None, CFG, LotFilter(CFG), storage, notifier, dry_run)
@@ -92,6 +97,13 @@ def test_expired_lot_is_ignored_and_not_remembered(storage):
 def test_lot_without_deadline_is_not_treated_as_expired(storage):
     stats, _ = scan(FakeSource([make_lot("1", deadline="")]), storage)
     assert stats["sent"] == 1
+
+
+def test_database_records_which_lots_matched(storage):
+    source = FakeSource([make_lot("1"), make_lot("2", region="Сурхандарьинская область"),
+                         make_lot("3", title="Крахмал")])
+    scan(source, storage)
+    assert remembered(storage) == {"1": True, "2": False, "3": False}
 
 
 def test_dry_run_shows_lots_but_remembers_nothing(storage):

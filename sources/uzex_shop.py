@@ -20,7 +20,7 @@ def fetch_offers(client, keyword: str, max_rows: int = 300) -> tuple[list[dict],
     """Предложения местных производителей по слову. Возвращает (строки, всего на сайте)."""
     body = {"is_local_manufacturer": 1, "producer_country_id": 244, "keyword": keyword}
     rows = list(paged(client, API, ORIGIN, body, page_size=100, max_rows=max_rows))
-    total = rows[0].get("total_count", len(rows)) if rows else 0
+    total = rows[0]["total_count"] if rows else 0
     return rows, total
 
 
