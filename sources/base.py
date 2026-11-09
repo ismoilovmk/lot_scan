@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta, timezone
 from typing import Iterator
+
+TASHKENT = timezone(timedelta(hours=5))  # сроки лотов бот хранит по ташкентскому времени
 
 
 @dataclass

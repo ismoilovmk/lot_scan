@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 import yaml
@@ -244,6 +245,7 @@ def test_run_passes_dry_run_through(project, monkeypatch):
 class ClientSpy(FakeSource):
     def list_lots(self, client, cfg):
         self.pause = client.pause
+        self.host_pauses = client.host_pauses
         return iter([])
 
 
@@ -253,6 +255,22 @@ def test_run_uses_request_pause_from_config(project, monkeypatch, cfg_extra, pau
     use_sources(monkeypatch, spy)
     bot.run_once({**CFG, "sources": {"a": True}, **cfg_extra}, FakeNotifier(), dry_run=False)
     assert spy.pause == pause
+
+
+@pytest.mark.parametrize("cfg_extra, expected", [({}, {}), ({"host_pauses": {"api.xt-xarid.uz": 65}}, {"api.xt-xarid.uz": 65})])
+def test_run_uses_per_site_pauses_from_config(project, monkeypatch, cfg_extra, expected):
+    spy = ClientSpy([], key="a")
+    use_sources(monkeypatch, spy)
+    bot.run_once({**CFG, "sources": {"a": True}, **cfg_extra}, FakeNotifier(), dry_run=False)
+    assert spy.host_pauses == expected
+
+
+def test_real_config_enables_xt_xarid_with_a_minute_between_requests():
+    cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
+    assert cfg["sources"]["xt_xarid"] is True
+    assert cfg["host_pauses"]["api.xt-xarid.uz"] >= 61     # из-за рубежа сайт даёт 1 запрос в 60 секунд
+    assert "33.2466" in cfg["xt_xarid_regions"]            # Ферганская область
+    assert "xt_xarid" in [source.key for source in bot.ALL_SOURCES]
 
 
 # --- .env ---

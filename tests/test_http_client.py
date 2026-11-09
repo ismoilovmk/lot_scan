@@ -146,3 +146,34 @@ def test_no_extra_wait_when_pause_already_passed(site):
     session.clock.now += 0.5
     client.get_json("u", "o")   # FakeClock.sleep упадёт, если попросят спать 0 секунд
     assert session.calls[1]["at"] == 1000.5
+
+
+# --- сайты со своим лимитом запросов ---
+
+SLOW = "https://api.slow.test/rpc"
+FAST = "https://api.fast.test/list"
+
+
+def test_slow_host_gets_its_own_longer_pause(site):
+    client, session = site([FakeResponse(data=i) for i in range(4)], pause=0.5,
+                           host_pauses={"api.slow.test": 65})
+    client.get_json(SLOW, "o")
+    client.get_json(FAST, "o")     # другой сайт не ждёт паузу медленного
+    client.get_json(FAST, "o")
+    client.get_json(SLOW, "o")
+    times = [(call["url"], call["at"] - 1000.0) for call in session.calls]
+    assert times == [(SLOW, 0), (FAST, 0), (FAST, 0.5), (SLOW, 65)]
+
+
+def test_retry_on_slow_host_waits_at_least_its_pause(site):
+    client, session = site([FakeResponse(status=429), FakeResponse(status=429), FakeResponse(data="ok")],
+                           host_pauses={"api.slow.test": 65})
+    assert client.post_json(SLOW, "o", {}) == "ok"
+    assert [call["at"] - 1000.0 for call in session.calls] == [0, 65, 130]
+
+
+def test_long_retry_delay_is_kept_when_longer_than_host_pause(site):
+    client, session = site([FakeResponse(status=500), FakeResponse(status=500), FakeResponse(data="ok")],
+                           host_pauses={"api.slow.test": 7})
+    client.get_json(SLOW, "o")
+    assert [call["at"] - 1000.0 for call in session.calls] == [0, 7, 17]   # 7 (пауза сайта), затем 10

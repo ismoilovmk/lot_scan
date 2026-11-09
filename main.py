@@ -14,7 +14,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -23,11 +23,11 @@ from filters import LotFilter
 from http_client import HttpClient
 from notifier import ConsoleNotifier, TelegramNotifier, find_chats, format_lot
 from sources import ALL_SOURCES
+from sources.base import TASHKENT
 from sources.uzex_shop import price_report
 from storage import Storage
 
 ROOT = Path(__file__).resolve().parent
-TASHKENT = timezone(timedelta(hours=5))
 log = logging.getLogger("bot")
 
 
@@ -53,6 +53,11 @@ def is_expired(deadline: str, now: datetime) -> bool:
     except (TypeError, ValueError):
         return False
     return end < now
+
+
+def make_client(cfg: dict) -> HttpClient:
+    return HttpClient(pause=float(cfg.get("request_pause_seconds", 0.5)),
+                      host_pauses=cfg.get("host_pauses") or {})
 
 
 def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: bool) -> dict:
@@ -84,7 +89,7 @@ def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: boo
 
 def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> list[str]:
     """Один проход по площадкам. Возвращает ключи площадок, которые проверить не удалось."""
-    client = HttpClient(pause=float(cfg.get("request_pause_seconds", 0.5)))
+    client = make_client(cfg)
     lot_filter = LotFilter(cfg)
     storage = Storage(str(ROOT / "lots.db"))
     enabled = cfg.get("sources") or {}
@@ -177,8 +182,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "test":
         send_test_message(notifier)
     elif args.command == "prices":
-        client = HttpClient(pause=float(cfg.get("request_pause_seconds", 0.5)))
-        notifier.send(price_report(client, cfg.get("shop_keywords") or []))
+        notifier.send(price_report(make_client(cfg), cfg.get("shop_keywords") or []))
     elif args.command == "run":
         failed = run_once(cfg, notifier, args.dry_run, args.source)
         if failed:  # ненулевой код выхода: планировщик на сервере увидит неполный проход

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+from urllib.parse import urlsplit
 
 import requests
 
@@ -21,13 +22,15 @@ RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
 class HttpClient:
-    def __init__(self, pause: float = 0.5, timeout: float = 40, retries: int = 3):
+    def __init__(self, pause: float = 0.5, timeout: float = 40, retries: int = 3,
+                 host_pauses: dict[str, float] | None = None):
         self.pause = pause
+        self.host_pauses = dict(host_pauses or {})  # сайты со своим лимитом: {"api.xt-xarid.uz": 65}
         self.timeout = timeout
         self.retries = retries
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
-        self._last = 0.0
+        self._last: dict[str, float] = {}  # когда последний раз обращались к каждому сайту
 
     def post_json(self, url: str, origin: str, body: dict):
         return self._request("POST", url, origin, body)
@@ -37,26 +40,28 @@ class HttpClient:
 
     def _request(self, method: str, url: str, origin: str, body):
         headers = {"Origin": origin, "Referer": origin + "/"}
+        host = urlsplit(url).netloc
+        pause = self.host_pauses.get(host, self.pause)
         error: Exception | None = None
         for attempt in range(1, self.retries + 1):
-            wait = self._last + self.pause - time.monotonic()
+            wait = self._last.get(host, float("-inf")) + pause - time.monotonic()
             if wait > 0:
                 time.sleep(wait)
             try:
                 resp = self.session.request(method, url, json=body, headers=headers, timeout=self.timeout)
-                self._last = time.monotonic()
+                self._last[host] = time.monotonic()
                 if resp.status_code in RETRY_STATUSES:
                     raise requests.HTTPError(f"HTTP {resp.status_code}", response=resp)
                 resp.raise_for_status()
                 return resp.json()
             except (requests.RequestException, ValueError) as exc:
-                self._last = time.monotonic()
+                self._last[host] = time.monotonic()
                 error = exc
                 status = getattr(getattr(exc, "response", None), "status_code", None)
                 if status is not None and status not in RETRY_STATUSES:
                     break  # 403/404 повтором не лечатся
                 if attempt < self.retries:
-                    delay = 5 * attempt
+                    delay = max(5 * attempt, pause)
                     log.warning("%s %s: %s — повтор через %s с", method, url, exc, delay)
                     time.sleep(delay)
         raise RuntimeError(f"{method} {url} не удался: {error}") from error
