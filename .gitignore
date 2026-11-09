@@ -1,0 +1,10 @@
+.env
+lots.db
+bot.log
+__pycache__/
+.pytest_cache/
+.metrics/
+target/
+.coverage
+*.lcov
+htmlcov/
