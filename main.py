@@ -42,19 +42,25 @@ def load_env(path: Path) -> None:
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
-def is_expired(deadline: str) -> bool:
+def tashkent_now() -> datetime:
+    """Текущее время в Ташкенте без часового пояса — в таком виде сроки отдают площадки."""
+    return datetime.now(TASHKENT).replace(tzinfo=None)
+
+
+def is_expired(deadline: str, now: datetime) -> bool:
     try:
         end = datetime.fromisoformat(deadline)
     except (TypeError, ValueError):
         return False
-    return end < datetime.now(TASHKENT).replace(tzinfo=None)
+    return end < now
 
 
 def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: bool) -> dict:
     stats = {"listed": 0, "new": 0, "in_region": 0, "sent": 0}
+    now = tashkent_now()
     for lot in source.list_lots(client, cfg):
         stats["listed"] += 1
-        if is_expired(lot.deadline) or storage.is_seen(lot.source, lot.lot_id):
+        if is_expired(lot.deadline, now) or storage.is_seen(lot.source, lot.lot_id):
             continue
         stats["new"] += 1
         if not lot_filter.region_ok(lot.region):
@@ -124,20 +130,26 @@ def show_chats() -> None:
         print(f"  {chat_id}   {name}")
 
 
-def main() -> None:
+def setup_logging(path: Path) -> None:
+    """Журнал работы: на экран и в файл."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.StreamHandler(), logging.FileHandler(path, encoding="utf-8")],
+        force=True,
+    )
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Сканер тендеров на наружную рекламу")
     parser.add_argument("command", choices=["run", "loop", "prices", "chatid", "test"])
     parser.add_argument("--dry-run", action="store_true", help="печатать на экран, ничего не отправлять и не запоминать")
     parser.add_argument("--source", help="проверить только одну площадку, например uzex_etender")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler(ROOT / "bot.log", encoding="utf-8")],
-    )
+    setup_logging(ROOT / "bot.log")
     load_env(ROOT / ".env")
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
     if args.command == "chatid":
