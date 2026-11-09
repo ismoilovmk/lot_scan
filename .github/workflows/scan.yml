@@ -2,8 +2,9 @@ name: Скан лотов
 
 on:
   schedule:
-    # каждые 30 минут с 08:00 до 19:30 по Ташкенту (в cron время UTC, Ташкент = UTC+5)
-    - cron: "*/30 3-14 * * *"
+    # каждые 20 минут с 07:00 до 20:59 по Ташкенту (в cron время UTC, Ташкент = UTC+5).
+    # Минуты не круглые: в :00 у GitHub очередь, и запуски часто опаздывают или теряются.
+    - cron: "7,27,47 2-15 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -22,7 +23,7 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 

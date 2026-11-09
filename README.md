@@ -7,6 +7,10 @@
 - etender.uzex.uz — тендеры и отборы
 - xarid.uzex.uz — аукцион на понижение
 - xarid.uzex.uz — отбор наилучших предложений (69-ПКМ)
+- xt-xarid.uz — аукционы, отборы, запросы предложений, тендеры
+
+Категории лота бот не учитывает: он читает все открытые лоты в нужных регионах и ищет слова
+в названии, позициях и описаниях.
 
 ## Настройка Telegram
 1. В Telegram напишите @BotFather, команда `/newbot`, получите токен.
@@ -26,8 +30,8 @@ python main.py prices           цены конкурентов в Milliy do'kon
 Уже отправленные лоты хранятся в `lots.db`; если удалить файл, бот пришлёт всё заново.
 
 ## Работа по расписанию на GitHub
-Файл `.github/workflows/scan.yml` запускает `python main.py run` каждые 30 минут
-с 08:00 до 19:30 по Ташкенту.
+Файл `.github/workflows/scan.yml` запускает `python main.py run` каждые 20 минут
+с 07:00 до 20:59 по Ташкенту. GitHub может задерживать запуски по расписанию на 5–30 минут.
 
 1. В репозитории: Settings → Secrets and variables → Actions → New repository secret.
    Добавьте два секрета: `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` (значения из `.env`).
