@@ -412,6 +412,20 @@ def test_cli_test_command_sends_hello(cli, capsys):
     assert "Сообщение отправлено" in capsys.readouterr().out
 
 
+def test_cli_test_command_explains_wrong_chat_instead_of_traceback(cli, monkeypatch, capsys):
+    class Refused:
+        status_code, ok = 400, False
+        text = '{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}'
+
+    monkeypatch.setattr(notifier_module.requests, "post", lambda url, json, timeout: Refused())
+    with pytest.raises(SystemExit) as stop:
+        cli("test")
+    message = str(stop.value)
+    assert "Telegram ответил 400" in message and "chat not found" in message
+    assert "Проверьте TELEGRAM_CHAT_ID" in message and "python main.py chatid" in message
+    assert "Сообщение отправлено" not in capsys.readouterr().out
+
+
 def test_cli_chatid_works_with_token_only(cli, monkeypatch, capsys):
     (cli.project / ".env").write_text("TELEGRAM_BOT_TOKEN=123:ABC\n", encoding="utf-8")
     monkeypatch.setattr(bot, "find_chats", lambda token: [("111", "Bilol (личный чат)")])

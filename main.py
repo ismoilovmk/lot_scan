@@ -130,6 +130,19 @@ def show_chats() -> None:
         print(f"  {chat_id}   {name}")
 
 
+def send_test_message(notifier) -> None:
+    try:
+        notifier.send("Проверка связи: бот Reklama Master подключён и может присылать лоты.")
+    except RuntimeError as exc:
+        sys.exit(
+            f"{exc}\n"
+            "Проверьте TELEGRAM_CHAT_ID в .env: команда «python main.py chatid» покажет чаты, "
+            "из которых писали боту. Бот не может писать туда, где ему не нажали «Старт» "
+            "и куда его не добавили."
+        )
+    print("Сообщение отправлено — проверьте Telegram.")
+
+
 def setup_logging(path: Path) -> None:
     """Журнал работы: на экран и в файл."""
     logging.basicConfig(
@@ -158,8 +171,7 @@ def main(argv: list[str] | None = None) -> None:
     notifier = make_notifier(args.dry_run)
 
     if args.command == "test":
-        notifier.send("Проверка связи: бот Reklama Master подключён и может присылать лоты.")
-        print("Сообщение отправлено — проверьте Telegram.")
+        send_test_message(notifier)
     elif args.command == "prices":
         client = HttpClient(pause=float(cfg.get("request_pause_seconds", 0.5)))
         notifier.send(price_report(client, cfg.get("shop_keywords") or []))
