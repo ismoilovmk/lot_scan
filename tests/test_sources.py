@@ -1,3 +1,5 @@
+import json
+
 from fakes import FakeClient, uzex_list
 
 from sources.base import Lot, Source, join_region, paged
@@ -114,6 +116,53 @@ def test_etender_category_is_not_searched_and_blanks_are_safe():
     lots = list(UzexEtender().list_lots(FakeClient(etender_site), {}))
     assert "рекламные" not in lots[0].search_text()
     assert (lots[1].title, lots[1].currency) == ("", "UZS")
+
+
+ETENDER_DETAIL = {
+    "addon_description": "tashqi reklama (outdoor) xizmatlari", "technical_description": "Техник топшириқ",
+    "description": None, "products": None,
+    "budget_products": json.dumps([
+        {"Product_Name": "Реклама жойлаштириш хизмати", "Description": "LED экран ва баннерлар",
+         "Category_Name": "Категория в поиск не идёт",
+         "Js_Properties": [{"Property_Name": "Тури", "User_Value": "Видеоролик"},
+                           {"Property_Name": "Пусто", "User_Value": None}]},
+        {"Product_Name": "Монтаж", "Description": None, "Js_Properties": None},
+    ], ensure_ascii=False),
+}
+
+
+def etender_lot():
+    return list(UzexEtender().list_lots(FakeClient(etender_site), {}))[0]
+
+
+def test_etender_details_add_positions_and_descriptions_to_search_text():
+    client = FakeClient(lambda method, url, body: ETENDER_DETAIL)
+    lot = UzexEtender().enrich(client, etender_lot())
+    assert client.calls == [("GET", "https://apietender.uzex.uz/api/common/GetTrade/523550/0", None)]
+    assert lot.title == "Tashqi reklama xizmatlari"            # название лота остаётся как на сайте
+    assert lot.details.split("\n") == [
+        "Реклама жойлаштириш хизмати", "LED экран ва баннерлар", "Видеоролик", "Монтаж",
+        "tashqi reklama (outdoor) xizmatlari", "Техник топшириқ",
+    ]
+    assert "Категория" not in lot.search_text()
+
+
+def test_etender_positions_of_corporate_customer_come_as_a_list():
+    detail = {"products": [{"Product_Name": "Баннер 3х6"}], "budget_products": None}
+    lot = UzexEtender().enrich(FakeClient(lambda *a: detail), etender_lot())
+    assert lot.details == "Баннер 3х6"
+
+
+def test_etender_unreadable_positions_are_searched_as_plain_text():
+    detail = {"budget_products": "не JSON, но тут есть слово баннер", "products": "[]"}
+    lot = UzexEtender().enrich(FakeClient(lambda *a: detail), etender_lot())
+    assert lot.details == "не JSON, но тут есть слово баннер"
+
+
+@pytest.mark.parametrize("detail", [{}, {"budget_products": '{"не": "список"}', "products": 5}])
+def test_etender_lot_without_any_details(detail):
+    lot = UzexEtender().enrich(FakeClient(lambda *a: detail), etender_lot())
+    assert lot.details == ""
 
 
 # --- аукцион ---

@@ -1,3 +1,5 @@
+import pytest
+
 from filters import LotFilter, normalize
 
 CFG = {
@@ -8,16 +10,34 @@ CFG = {
 }
 
 
-def test_normalize_uzbek_letters_and_apostrophes():
-    assert normalize("Фарғона  ВИЛОЯТИ") == "фаргона вилояти"
-    assert normalize("Ўзбекистон ҳудуди Қ, ёлка") == "узбекистон худуди к, елка"
-    assert normalize(" много   пробелов\nи\tстрок ") == "много пробелов и строк"
-    assert normalize(None) == ""
+def same(*spellings):
+    return len({normalize(s) for s in spellings}) == 1
+
+
+def test_case_spaces_and_uzbek_letters_do_not_matter():
+    assert same("Фарғона  ВИЛОЯТИ", "фаргона вилояти", " Фаргона\nвилояти ")
+    assert same("Ўзбекистон ҳудуди Қ, ёлка", "узбекистон худуди к, елка")
+    assert not same("фергана", "фаргона")
+    assert normalize(None) == normalize("") == ""
 
 
 def test_all_apostrophe_kinds_are_ignored():
     for apostrophe in "'’‘`ʻʼ´":
-        assert normalize(f"Farg{apostrophe}ona") == "fargona"
+        assert same(f"Farg{apostrophe}ona", "fargona")
+
+
+@pytest.mark.parametrize("mixed, plain", [
+    ("бaннер", "баннер"),      # латинская a
+    ("баннeр", "баннер"),      # латинская e
+    ("pеклaмa", "реклама"),    # латинские p и a
+    ("bаnnеr", "banner"),      # кириллические а и е в латинском слове
+    ("oракал", "оракал"),      # латинская o
+    ("cтeнд", "стенд"),        # латинские c и e
+    ("xoкимият", "хокимият"),  # латинские x и o
+    ("yлица", "улица"),        # латинская y
+])
+def test_latin_lookalikes_inside_cyrillic_words_do_not_matter(mixed, plain):
+    assert mixed != plain and same(mixed, plain)
 
 
 def test_keywords_match_russian_uzbek_any_case():
@@ -32,18 +52,26 @@ def test_keywords_match_russian_uzbek_any_case():
     assert f.match_keywords("") == []
 
 
-def test_keywords_from_config_are_normalized_too():
-    f = LotFilter({"keywords": ["  ПЕШЛАВҲА ", "Hajmli  Harf", "", None, 2026]})
-    assert f.keywords == ["пешлавха", "hajmli harf", "none", "2026"]
-    assert f.match_keywords("пешлавха") == ["пешлавха"]
+def test_lot_typed_with_mixed_alphabets_is_still_found():
+    f = LotFilter(CFG)
+    assert f.match_keywords("Изготовление бaннeров") == ["баннер"]   # латинские a и e
+    assert f.match_keywords("Tashqi bаnner") == ["banner"]            # кириллическая а
+    assert f.match_keywords("Pеклaмныe услуги") == ["реклам"]
+
+
+def test_matched_keywords_are_reported_as_written_in_config():
+    f = LotFilter({"keywords": ["  ПЕШЛАВҲА ", "Hajmli  Harf", "", None, "   "]})
+    assert f.match_keywords("пешлавха ва hajmli harflar") == ["ПЕШЛАВҲА", "Hajmli  Harf"]
+    assert f.match_keywords("none") == []      # пустые строки и пропуски в списке не считаются словами
 
 
 def test_exclude_phrase_removes_false_positive():
     f = LotFilter(CFG)
     assert f.match_keywords("Рассмотрение рекламаций по качеству") == []
     assert f.match_keywords("Рекламация и наружная реклама") == ["реклам"]
+    assert f.match_keywords("Pекламaция") == []   # исключение тоже не зависит от алфавита
     # вырезанная фраза не склеивает соседние слова в новое ключевое
-    assert LotFilter({"keywords": ["аб"], "exclude_keywords": ["xx"]}).match_keywords("аxxб") == []
+    assert LotFilter({"keywords": ["zb"], "exclude_keywords": ["qq"]}).match_keywords("zqqb") == []
 
 
 def test_region_filter():
@@ -51,6 +79,7 @@ def test_region_filter():
     assert f.region_ok("Ферганская область, Коканд")
     assert f.region_ok("Фарғона вилояти")
     assert f.region_ok("Farg‘ona viloyati")
+    assert f.region_ok("Фepгaнcкaя область")     # латинские e, p, a, c
     assert f.region_ok("город Ташкент, Мирабадский район")
     assert f.region_ok("Чилонзор тумани")
     assert not f.region_ok("Сурхандарьинская область, Термез")
