@@ -23,6 +23,7 @@ class Storage:
             if column not in columns:
                 self.conn.execute(f"ALTER TABLE lots ADD COLUMN {column} TEXT")
         self.conn.execute("CREATE INDEX IF NOT EXISTS lots_fingerprint ON lots (fingerprint)")
+        self.conn.execute("CREATE TABLE IF NOT EXISTS notes (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.conn.commit()
 
     def is_seen(self, source: str, lot_id: str) -> bool:
@@ -50,6 +51,26 @@ class Storage:
              deadline),
         )
         self.conn.commit()
+
+    def note(self, name: str) -> str:
+        """Заметка бота самому себе между проходами. Пусто — такой ещё нет."""
+        row = self.conn.execute("SELECT value FROM notes WHERE name = ?", (name,)).fetchone()
+        return row[0] if row else ""
+
+    def write_note(self, name: str, value: str) -> None:
+        self.conn.execute("INSERT OR REPLACE INTO notes (name, value) VALUES (?, ?)", (name, value))
+        self.conn.commit()
+
+    def adopt_vocabulary(self, signature: str) -> bool:
+        """Если слова или регионы изменились, забывает неотправленные лоты, чтобы проверить их заново.
+
+        Отправленные остаются: повторно они не уйдут. True — словарь изменился.
+        """
+        if self.note("vocabulary") == signature:
+            return False
+        self.conn.execute("DELETE FROM lots WHERE matched = 0")
+        self.write_note("vocabulary", signature)   # одна запись на оба шага: сбой посередине ничего не меняет
+        return True
 
     def close(self) -> None:
         self.conn.close()

@@ -77,3 +77,24 @@ def test_database_from_previous_version_keeps_working(tmp_path):
         store.mark("a", "2", True, "Вывеска", "отпечаток", "2026-11-16T09:00:00")
         assert store.is_duplicate("отпечаток", "2026-11-10T00:00:00")
         store.close()
+
+
+def test_changed_vocabulary_forgets_lots_that_were_not_sent(tmp_path):
+    path = str(tmp_path / "t.db")
+    store = Storage(path)
+    store.mark("a", "sent", True, "Баннер", "отпечаток", "2999-01-01T00:00:00")
+    store.mark("a", "rejected", False, "Флаер")
+    assert store.adopt_vocabulary("v1") is True          # базу вели ещё без отпечатка словаря
+    assert store.is_seen("a", "sent") and not store.is_seen("a", "rejected")
+
+    store.mark("a", "rejected", False, "Флаер")
+    assert store.adopt_vocabulary("v1") is False         # словарь тот же — ничего не забываем
+    assert store.is_seen("a", "rejected")
+    store.close()
+
+    store = Storage(path)                                # после перезапуска отпечаток на месте
+    assert store.adopt_vocabulary("v1") is False
+    assert store.adopt_vocabulary("v2") is True
+    assert store.is_seen("a", "sent") and not store.is_seen("a", "rejected")
+    assert store.is_duplicate("отпечаток", "2026-11-10T00:00:00")   # отправленное по-прежнему не повторяем
+    store.close()

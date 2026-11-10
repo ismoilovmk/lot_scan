@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from filters import LotFilter, fingerprint
+from filters import LotFilter, fingerprint, vocabulary_signature
 from http_client import HttpClient
 from notifier import ConsoleNotifier, TelegramNotifier, find_chats, format_lot
 from sources import ALL_SOURCES
@@ -104,6 +104,8 @@ def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> lis
     enabled = cfg.get("sources") or {}
     failed = []
     try:
+        if not dry_run and storage.adopt_vocabulary(vocabulary_signature(cfg)):
+            log.info("Слова или регионы изменились: открытые лоты, которые раньше не подошли, проверяю заново")
         for source in ALL_SOURCES:
             if only and source.key != only:
                 continue

@@ -287,6 +287,33 @@ def test_run_remembers_sent_lots_in_project_database(project, monkeypatch):
     assert (project / "lots.db").exists()
 
 
+def test_new_word_in_vocabulary_brings_back_open_lots_rejected_before(project, monkeypatch, caplog):
+    lots = [make_lot("1", source="a"), make_lot("2", source="a", title="Флаер тайёрлаш")]
+    use_sources(monkeypatch, FakeSource(lots, key="a"))
+    cfg = {**CFG, "sources": {"a": True}}
+    wider = {**cfg, "services": {"Реклама": ["баннер"], "Полиграфия": ["флаер"]}}
+    first, second, third, fourth = FakeNotifier(), FakeNotifier(), FakeNotifier(), FakeNotifier()
+    bot.run_once(cfg, first, dry_run=False)
+    bot.run_once(cfg, second, dry_run=False)
+    with caplog.at_level(logging.INFO):
+        bot.run_once(wider, third, dry_run=False)
+    bot.run_once(wider, fourth, dry_run=False)
+    assert [len(n.sent) for n in (first, second, third, fourth)] == [1, 0, 1, 0]
+    assert "<b>Флаер тайёрлаш</b>" in third.sent[0]
+    assert caplog.text.count("Слова или регионы изменились") == 1
+
+
+def test_dry_run_with_new_vocabulary_forgets_nothing(project, monkeypatch):
+    use_sources(monkeypatch, FakeSource([make_lot("2", source="a", title="Флаер тайёрлаш")], key="a"))
+    cfg = {**CFG, "sources": {"a": True}}
+    wider = {**cfg, "services": {"Полиграфия": ["флаер"]}}
+    bot.run_once(cfg, FakeNotifier(), dry_run=False)
+    bot.run_once(wider, FakeNotifier(), dry_run=True)
+    after = FakeNotifier()
+    bot.run_once(cfg, after, dry_run=False)        # прежний словарь: пробный проход ничего не сбросил
+    assert after.sent == []
+
+
 def test_run_passes_dry_run_through(project, monkeypatch):
     use_sources(monkeypatch, FakeSource([make_lot("1", source="a")], key="a"))
     cfg = {**CFG, "sources": {"a": True}}
