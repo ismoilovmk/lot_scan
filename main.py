@@ -19,6 +19,7 @@ from pathlib import Path
 
 import yaml
 
+import health
 from filters import LotFilter, fingerprint, vocabulary_signature
 from http_client import HttpClient
 from notifier import ConsoleNotifier, TelegramNotifier, find_chats, format_lot
@@ -96,30 +97,41 @@ def deliver(lot, text: str, storage, notifier, now: datetime) -> bool:
     return True
 
 
+def chosen_sources(cfg: dict, only: str | None) -> list:
+    """Площадки для прохода: одна названная (даже выключенная) или все включённые в config.yaml."""
+    enabled = cfg.get("sources") or {}
+    return [s for s in ALL_SOURCES if (s.key == only if only else enabled.get(s.key, False))]
+
+
+def check_source(source, client, cfg, lot_filter, storage, notifier, dry_run: bool) -> bool:
+    """Проход по одной площадке. False — проверить не удалось."""
+    try:
+        stats = scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run)
+    except Exception:
+        log.exception("%s: проход прерван из-за ошибки", source.key)
+        return False
+    log.info(
+        "%s: в списке %s, новых %s, в нужном регионе %s, отправлено %s",
+        source.key, stats["listed"], stats["new"], stats["in_region"], stats["sent"],
+    )
+    return True
+
+
 def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> list[str]:
     """Один проход по площадкам. Возвращает ключи площадок, которые проверить не удалось."""
     client = make_client(cfg)
     lot_filter = LotFilter(cfg)
-    storage = Storage(str(ROOT / "lots.db"))
-    enabled = cfg.get("sources") or {}
-    failed = []
+    storage = Storage(str(ROOT / "lots.db"), tashkent_now)
+    sources = chosen_sources(cfg, only)
     try:
         if not dry_run and storage.adopt_vocabulary(vocabulary_signature(cfg)):
             log.info("Слова или регионы изменились: открытые лоты, которые раньше не подошли, проверяю заново")
-        for source in ALL_SOURCES:
-            if only and source.key != only:
-                continue
-            if not only and not enabled.get(source.key, False):
-                continue
-            try:
-                stats = scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run)
-                log.info(
-                    "%s: в списке %s, новых %s, в нужном регионе %s, отправлено %s",
-                    source.key, stats["listed"], stats["new"], stats["in_region"], stats["sent"],
-                )
-            except Exception:
-                log.exception("%s: проход прерван из-за ошибки", source.key)
-                failed.append(source.key)
+        failed = [source.key for source in sources
+                  if not check_source(source, client, cfg, lot_filter, storage, notifier, dry_run)]
+        if not dry_run:
+            titles = {source.key: source.title for source in ALL_SOURCES}
+            health.report(storage, notifier, tashkent_now(), titles, [source.key for source in sources], failed,
+                          cfg.get("daily_summary_hour"))
     finally:
         storage.close()
     return failed

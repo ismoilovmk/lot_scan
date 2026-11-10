@@ -3,7 +3,7 @@
 # Инструменты по умолчанию берут другой Python, без requests, поэтому команды тестов заданы явно.
 export PYTHONUTF8=1
 COV=target/coverage/python
-COVERAGE="python -m coverage run --data-file=$COV/.coverage --source=filters,http_client,main,notifier,sources,storage -m pytest -q -p no:cacheprovider && python -m coverage lcov --data-file=$COV/.coverage -o $COV/lcov.info"
+COVERAGE="python -m coverage run --data-file=$COV/.coverage --source=filters,health,http_client,main,notifier,sources,storage -m pytest -q -p no:cacheprovider && python -m coverage lcov --data-file=$COV/.coverage -o $COV/lcov.info"
 mkdir -p "$COV"
 tool="$1"
 [ $# -gt 0 ] && shift

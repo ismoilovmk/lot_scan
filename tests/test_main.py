@@ -314,6 +314,50 @@ def test_dry_run_with_new_vocabulary_forgets_nothing(project, monkeypatch):
     assert after.sent == []
 
 
+def test_run_tells_when_a_source_keeps_failing(project, monkeypatch):
+    broken = FakeSource([], key="a", fail_listing=True)
+    broken.title = "Площадка А"
+    use_sources(monkeypatch, broken, FakeSource([], key="b"))
+    cfg = {**CFG, "sources": {"a": True, "b": True}}
+    notifier = FakeNotifier()
+    for _ in range(2):
+        bot.run_once(cfg, notifier, dry_run=False)
+    assert notifier.sent == []
+    assert bot.run_once(cfg, notifier, dry_run=False) == ["a"]
+    assert notifier.sent == ["⚠️ Площадка А не отвечает уже 3 проверки подряд. Лоты с неё пока не приходят."]
+
+
+def test_dry_run_sends_no_service_messages(project, monkeypatch):
+    use_sources(monkeypatch, FakeSource([], key="a", fail_listing=True))
+    monkeypatch.setattr(bot, "tashkent_now", lambda: datetime(2026, 11, 10, 21, 0, 0))
+    notifier = FakeNotifier()
+    for _ in range(4):
+        bot.run_once({**CFG, "sources": {"a": True}, "daily_summary_hour": 20}, notifier, dry_run=True)
+    assert notifier.sent == []
+
+
+def test_run_sends_summary_of_the_day_in_tashkent_time(project, monkeypatch):
+    lots = [make_lot("1", source="a"), make_lot("2", source="a", title="Крахмал")]
+    use_sources(monkeypatch, FakeSource(lots, key="a"), FakeSource([], key="off"))
+    cfg = {**CFG, "sources": {"a": True}, "daily_summary_hour": 20}
+    notifier = FakeNotifier()
+    monkeypatch.setattr(bot, "tashkent_now", lambda: datetime(2026, 11, 10, 19, 40, 0))
+    bot.run_once(cfg, notifier, dry_run=False)
+    assert len(notifier.sent) == 1                       # только сам лот
+    monkeypatch.setattr(bot, "tashkent_now", lambda: datetime(2026, 11, 10, 20, 0, 0))
+    bot.run_once(cfg, notifier, dry_run=False)
+    assert notifier.sent[1:] == [
+        "📊 Итог дня 10.11: новых лотов просмотрено — 2, отправлено — 1. Все площадки отвечают."]
+
+
+def test_run_without_summary_setting_sends_no_summary(project, monkeypatch):
+    use_sources(monkeypatch, FakeSource([], key="a"))
+    monkeypatch.setattr(bot, "tashkent_now", lambda: datetime(2026, 11, 10, 23, 0, 0))
+    notifier = FakeNotifier()
+    bot.run_once({**CFG, "sources": {"a": True}}, notifier, dry_run=False)
+    assert notifier.sent == []
+
+
 def test_run_passes_dry_run_through(project, monkeypatch):
     use_sources(monkeypatch, FakeSource([make_lot("1", source="a")], key="a"))
     cfg = {**CFG, "sources": {"a": True}}
@@ -344,6 +388,11 @@ def test_run_uses_per_site_pauses_from_config(project, monkeypatch, cfg_extra, e
     use_sources(monkeypatch, spy)
     bot.run_once({**CFG, "sources": {"a": True}, **cfg_extra}, FakeNotifier(), dry_run=False)
     assert spy.host_pauses == expected
+
+
+def test_real_config_sends_summary_while_the_schedule_is_still_running():
+    cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
+    assert 7 <= cfg["daily_summary_hour"] <= 20      # расписание в scan.yml работает с 07:00 до 20:59
 
 
 def test_real_config_enables_xt_xarid_with_a_minute_between_requests():

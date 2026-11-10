@@ -6,7 +6,8 @@ from datetime import datetime
 
 
 class Storage:
-    def __init__(self, path: str = "lots.db"):
+    def __init__(self, path: str = "lots.db", clock=datetime.now):
+        self.clock = clock  # время первого просмотра лота; бот передаёт ташкентское
         self.conn = sqlite3.connect(path)
         self.conn.execute(
             """CREATE TABLE IF NOT EXISTS lots (
@@ -47,10 +48,17 @@ class Storage:
         self.conn.execute(
             "INSERT OR IGNORE INTO lots (source, lot_id, first_seen, matched, title, fingerprint, deadline) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (source, lot_id, datetime.now().isoformat(timespec="seconds"), int(sent), title[:300], fingerprint,
+            (source, lot_id, self.clock().isoformat(timespec="seconds"), int(sent), title[:300], fingerprint,
              deadline),
         )
         self.conn.commit()
+
+    def day_counts(self, day: str) -> tuple[int, int]:
+        """Сколько лотов впервые просмотрено за день (ГГГГ-ММ-ДД) и сколько из них отправлено."""
+        seen, sent = self.conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(matched), 0) FROM lots WHERE first_seen LIKE ?", (day + "%",)
+        ).fetchone()
+        return seen, sent
 
     def note(self, name: str) -> str:
         """Заметка бота самому себе между проходами. Пусто — такой ещё нет."""
