@@ -21,6 +21,12 @@ HEADERS = {
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
+def _site_answer(error: Exception | None) -> str:
+    """Что сайт написал в ответе с ошибкой: без этого по одному коду причину не понять."""
+    text = " ".join((getattr(getattr(error, "response", None), "text", "") or "").split())
+    return f". Ответ сайта: {text[:300]}" if text else ""
+
+
 class HttpClient:
     def __init__(self, pause: float = 0.5, timeout: float = 40, retries: int = 3,
                  host_pauses: dict[str, float] | None = None):
@@ -64,4 +70,4 @@ class HttpClient:
                     delay = max(5 * attempt, pause)
                     log.warning("%s %s: %s — повтор через %s с", method, url, exc, delay)
                     time.sleep(delay)
-        raise RuntimeError(f"{method} {url} не удался: {error}") from error
+        raise RuntimeError(f"{method} {url} не удался: {error}{_site_answer(error)}") from error

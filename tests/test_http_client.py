@@ -20,8 +20,9 @@ class FakeClock:
 
 
 class FakeResponse:
-    def __init__(self, status=200, data=None, bad_json=False):
+    def __init__(self, status=200, data=None, bad_json=False, text=""):
         self.status_code = status
+        self.text = text
         self.data = data
         self.bad_json = bad_json
 
@@ -104,6 +105,20 @@ def test_permanent_failure_is_not_retried(site, status):
     with pytest.raises(RuntimeError, match=f"GET u не удался: HTTP {status}"):
         client.get_json("u", "o")
     assert len(session.calls) == 1
+
+
+def test_error_tells_what_the_site_answered(site):
+    client, _ = site([FakeResponse(status=400, text='  {"error": "Неверный' + chr(9) + 'фильтр"}' + chr(10) + "я" * 400)])
+    with pytest.raises(RuntimeError) as failure:
+        client.get_json("u", "o")
+    assert str(failure.value) == 'GET u не удался: HTTP 400. Ответ сайта: {"error": "Неверный фильтр"} ' + "я" * 271
+
+
+def test_error_without_site_answer_has_no_empty_tail(site):
+    client, _ = site([FakeResponse(status=404, text="  " + chr(10))])
+    with pytest.raises(RuntimeError) as failure:
+        client.get_json("u", "o")
+    assert str(failure.value) == "GET u не удался: HTTP 404"
 
 
 def test_gives_up_after_three_attempts(site):
