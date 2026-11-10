@@ -31,7 +31,7 @@ def test_full_message_text():
         title="Баннер <3x6> & монтаж", customer='ООО "Хоким"', region="Ферганская область, Коканд",
         price=79800000.0, deadline="2026-11-13T09:00:00", url="https://etender.uzex.uz/lot/5?a=1&b=2",
     )
-    assert format_lot(lot, ["баннер", "реклам"]) == "\n".join([
+    assert format_lot(lot, {"Баннеры": ["баннер"], "Реклама": ["реклам", "reklama"]}) == "\n".join([
         "<b>Баннер &lt;3x6&gt; &amp; монтаж</b>",
         "",
         "Площадка: UzEX etender (отбор)",
@@ -40,7 +40,8 @@ def test_full_message_text():
         "Регион: Ферганская область, Коканд",
         "Стартовая цена: 79 800 000 сум",
         "Срок подачи: 13.11.2026 09:00",
-        "Совпало: баннер, реклам",
+        "Услуга: Баннеры; Реклама",
+        "Совпало: баннер, реклам, reklama",
         "",
         "https://etender.uzex.uz/lot/5?a=1&amp;b=2",
     ])
@@ -48,7 +49,7 @@ def test_full_message_text():
 
 def test_message_for_lot_with_missing_fields():
     lot = Lot(source="s", source_title="Площадка", lot_id="77", title="Вывеска", currency="USD", price=10.0)
-    lines = format_lot(lot, ["вывеск"]).split("\n")
+    lines = format_lot(lot, {"Вывески": ["вывеск"]}).split("\n")
     assert lines[3] == "Лот №: 77"            # нет номера — показываем id
     assert lines[4] == "Заказчик: не указан"
     assert lines[5] == "Регион: не указан"
@@ -60,8 +61,8 @@ def test_long_title_is_cut_to_400_chars():
     def lot(title):
         return Lot(source="s", source_title="S", lot_id="1", title=title)
 
-    assert format_lot(lot("я" * 400), ["x"]).split("\n")[0] == "<b>" + "я" * 400 + "</b>"
-    assert format_lot(lot("я" * 401), ["x"]).split("\n")[0] == "<b>" + "я" * 400 + "…</b>"
+    assert format_lot(lot("я" * 400), {"x": ["x"]}).split("\n")[0] == "<b>" + "я" * 400 + "</b>"
+    assert format_lot(lot("я" * 401), {"x": ["x"]}).split("\n")[0] == "<b>" + "я" * 400 + "…</b>"
 
 
 def test_console_notifier_prints_message(capsys):
@@ -207,3 +208,11 @@ def test_other_telegram_failure_is_reported(telegram):
     with pytest.raises(RuntimeError) as error:
         find_chats("t")
     assert str(error.value) == "Telegram ответил 500: " + ("oops" * 100)[:300]
+
+
+def test_priority_region_is_marked_above_the_title():
+    lot = Lot(source="s", source_title="S", lot_id="1", title="Баннер")
+    lines = format_lot(lot, {"Баннеры <1>": ["баннер"]}, "Фергана & область").splitlines()
+    assert lines[:2] == ["🟢 Фергана &amp; область", "<b>Баннер</b>"]
+    assert "Услуга: Баннеры &lt;1&gt;" in lines
+    assert format_lot(lot, {"Баннеры": ["баннер"]}, "").splitlines()[0] == "<b>Баннер</b>"

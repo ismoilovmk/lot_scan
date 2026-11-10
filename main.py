@@ -78,21 +78,21 @@ def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: boo
         except RuntimeError as exc:
             log.warning("Лот %s %s: подробности не получены (%s), попробую в следующий раз", lot.source, lot.lot_id, exc)
             continue
-        sent = deliver(lot, lot_filter.match_keywords(lot.search_text()), storage, notifier, now)
+        services = lot_filter.match(lot.search_text())
+        text = format_lot(lot, services, lot_filter.priority(lot.region))
+        sent = bool(services) and deliver(lot, text, storage, notifier, now)
         stats["sent"] += sent
         if not dry_run:
             storage.mark(lot.source, lot.lot_id, sent, lot.title, fingerprint(lot), lot.deadline)
     return stats
 
 
-def deliver(lot, matched: list[str], storage, notifier, now: datetime) -> bool:
-    """Отправляет подошедший лот, если такой же ещё не отправлялся. True — отправлен."""
-    if not matched:
-        return False
+def deliver(lot, text: str, storage, notifier, now: datetime) -> bool:
+    """Отправляет сообщение о лоте, если такой же ещё не отправлялся. True — отправлен."""
     if storage.is_duplicate(fingerprint(lot), now.isoformat(timespec="seconds")):
         log.info("Лот %s %s: такой же уже отправлен, пропускаю", lot.source, lot.lot_id)
         return False
-    notifier.send(format_lot(lot, matched))  # при ошибке лот не помечается и уйдёт в следующий раз
+    notifier.send(text)  # при ошибке лот не помечается и уйдёт в следующий раз
     return True
 
 

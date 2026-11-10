@@ -27,14 +27,17 @@ def format_deadline(value: str) -> str:
         return value or "не указан"
 
 
-def format_lot(lot: Lot, matched: list[str]) -> str:
-    """Текст сообщения в HTML-разметке Telegram."""
+def format_lot(lot: Lot, services: dict[str, list[str]], priority: str = "") -> str:
+    """Текст сообщения в HTML-разметке Telegram. services — {услуга: найденные слова},
+    priority — название приоритетного региона, если лот из него."""
     e = html.escape
     title = lot.title if len(lot.title) <= 400 else lot.title[:400] + "…"
     number = lot.number or lot.lot_id
     customer = lot.customer or "не указан"
     region = lot.region or "не указан"
-    lines = [
+    words = [word for found in services.values() for word in found]
+    lines = [f"🟢 {e(priority)}"] if priority else []
+    lines += [
         f"<b>{e(title)}</b>",
         "",
         f"Площадка: {e(lot.source_title)}",
@@ -43,7 +46,8 @@ def format_lot(lot: Lot, matched: list[str]) -> str:
         f"Регион: {e(region)}",
         f"Стартовая цена: {e(format_price(lot.price, lot.currency))}",
         f"Срок подачи: {e(format_deadline(lot.deadline))}",
-        f"Совпало: {e(', '.join(matched))}",
+        f"Услуга: {e('; '.join(services))}",
+        f"Совпало: {e(', '.join(words))}",
         "",
         e(lot.url),
     ]

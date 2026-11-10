@@ -13,7 +13,7 @@ from filters import LotFilter, fingerprint
 from notifier import ConsoleNotifier, TelegramNotifier
 from storage import Storage
 
-CFG = {"keywords": ["баннер"], "regions": ["ферган"], "allow_unknown_region": True}
+CFG = {"services": {"Реклама": ["баннер"]}, "regions": {"Свои": ["ферган"]}, "allow_unknown_region": True}
 NOW = datetime(2026, 11, 9, 12, 0, 0)
 
 
@@ -37,9 +37,9 @@ def remembered(storage):
     return {lot_id: bool(matched) for lot_id, matched in storage.conn.execute("SELECT lot_id, matched FROM lots")}
 
 
-def scan(source, storage, notifier=None, dry_run=False):
+def scan(source, storage, notifier=None, dry_run=False, cfg=CFG):
     notifier = notifier or FakeNotifier()
-    stats = bot.scan_source(source, None, CFG, LotFilter(CFG), storage, notifier, dry_run)
+    stats = bot.scan_source(source, None, cfg, LotFilter(cfg), storage, notifier, dry_run)
     return stats, notifier
 
 
@@ -51,6 +51,7 @@ def test_matching_lot_is_sent_once(storage):
     assert stats == {"listed": 1, "new": 1, "in_region": 1, "sent": 1}
     assert len(notifier.sent) == 1
     assert "<b>Изготовление баннера</b>" in notifier.sent[0]
+    assert "Услуга: Реклама" in notifier.sent[0]
     assert "Совпало: баннер" in notifier.sent[0]
     assert "https://example.test/lot/1" in notifier.sent[0]
 
@@ -64,6 +65,13 @@ def test_keyword_found_only_in_lot_details_still_matches(storage):
     stats, notifier = scan(source, storage)
     assert stats["sent"] == 1
     assert "<b>Услуги печатные</b>" in notifier.sent[0]
+
+
+def test_lot_from_priority_region_is_marked(storage):
+    cfg = {**CFG, "regions": {"Фергана": ["ферган"], "Ташкент": ["ташкент"]}, "priority_region": "Фергана"}
+    lots = [make_lot("1", customer="А"), make_lot("2", region="город Ташкент", customer="Б")]
+    _, notifier = scan(FakeSource(lots), storage, cfg=cfg)
+    assert [text.splitlines()[0] for text in notifier.sent] == ["🟢 Фергана", "<b>Изготовление баннера</b>"]
 
 
 def test_same_lot_under_another_number_is_sent_once(storage):
