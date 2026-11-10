@@ -46,7 +46,7 @@ _VOCABULARY = ("services", "exclude_keywords", "regions", "allow_unknown_region"
 
 def vocabulary_signature(cfg: dict) -> str:
     """Отпечаток настроек поиска: одинаковый, пока слова и регионы не менялись."""
-    text = json.dumps([cfg.get(key) for key in _VOCABULARY], ensure_ascii=False, sort_keys=True)
+    text = json.dumps([cfg.get(key) for key in _VOCABULARY], sort_keys=True)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 

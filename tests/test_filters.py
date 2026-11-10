@@ -191,3 +191,5 @@ def test_vocabulary_signature_changes_only_with_search_settings():
     signatures = [vocabulary_signature(cfg) for cfg in changed]
     assert base not in signatures and len(set(signatures)) == len(signatures)
     assert vocabulary_signature({}) == vocabulary_signature({"sources": {}})
+    reordered = {**SERVICES, "services": dict(reversed(SERVICES["services"].items()))}
+    assert vocabulary_signature(reordered) == base      # услуги переставили местами — искать то же самое

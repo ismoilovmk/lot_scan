@@ -38,6 +38,8 @@ def test_alert_comes_once_after_three_failures_in_a_row(storage):
 def test_recovery_is_reported_only_after_an_alert(storage):
     assert runs(storage, ["a", "a", "a", "a"]) != []
     assert runs(storage, [""]) == ["✅ Площадка А снова отвечает."]
+    assert len(runs(storage, ["a", "a", "a"])) == 1         # ровно три сбоя — уже писали, значит и отбой нужен
+    assert runs(storage, [""]) == ["✅ Площадка А снова отвечает."]
     assert runs(storage, ["", "a", "a", ""]) == []          # два сбоя подряд — ещё не повод писать
 
 
