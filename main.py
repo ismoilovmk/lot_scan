@@ -6,6 +6,7 @@
   python main.py prices          отчёт по ценам конкурентов в Milliy do'kon
   python main.py chatid          показать ID чатов, из которых писали боту
   python main.py test            отправить проверочное сообщение в Telegram
+  python main.py wait            подождать до следующей проверки (для цепочки запусков на GitHub)
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -185,11 +186,73 @@ def setup_logging(path: Path) -> None:
     )
 
 
+MAX_WAIT = 5 * 3600  # задание на GitHub живёт не дольше шести часов, поэтому ночь пережидаем по частям
+
+
+def work_hours(cfg: dict) -> tuple[int, int]:
+    """Первый и последний час суток (по Ташкенту), когда бот проверяет площадки сам."""
+    first, last = cfg.get("work_hours") or (0, 23)
+    return int(first), int(last)
+
+
+def in_work_hours(now: datetime, cfg: dict) -> bool:
+    first, last = work_hours(cfg)
+    return first <= now.hour <= last
+
+
+def next_check(previous: datetime, now: datetime, cfg: dict) -> datetime:
+    """Когда пора делать следующую проверку: через интервал после начала прошлой, но в рабочие часы."""
+    due = max(previous + timedelta(minutes=int(cfg.get("interval_minutes", 20))), now)
+    if in_work_hours(due, cfg):
+        return due
+    morning = due.replace(hour=work_hours(cfg)[0], minute=0, second=0, microsecond=0)
+    # утро того же дня, а если оно уже прошло — следующего: разность «утро − срок» тогда равна −1 дню
+    return morning - timedelta(days=(morning - due).days)
+
+
+def wait_for_next_check(cfg: dict, since: str) -> None:
+    """Спит до следующей проверки. since — когда началась прошлая, в секундах эпохи; пусто — только что."""
+    now = tashkent_now()
+    previous = datetime.fromtimestamp(int(since), TASHKENT).replace(tzinfo=None) if since else now
+    due = next_check(previous, now, cfg)
+    seconds = min(int((due - now).total_seconds()), MAX_WAIT)
+    log.info("Следующая проверка в %s, жду %s мин", due.strftime("%d.%m %H:%M"), seconds // 60)
+    time.sleep(seconds)
+
+
+def run_command(cfg: dict, notifier, args) -> None:
+    if args.work_hours_only and not in_work_hours(tashkent_now(), cfg):
+        log.info("Нерабочие часы: проверку пропускаю")
+        return
+    failed = run_once(cfg, notifier, args.dry_run, args.source)
+    if failed:  # ненулевой код выхода: планировщик на сервере увидит неполный проход
+        sys.exit(f"Не удалось проверить площадки: {', '.join(failed)}")
+
+
+def loop_command(cfg: dict, notifier, args) -> None:
+    interval = int(cfg.get("interval_minutes", 20)) * 60
+    while True:
+        run_once(cfg, notifier, args.dry_run, args.source)
+        log.info("Следующая проверка через %s мин", interval // 60)
+        time.sleep(interval)
+
+
+# Команды, которым нужен Telegram (или экран при --dry-run)
+COMMANDS = {
+    "run": run_command,
+    "loop": loop_command,
+    "test": lambda cfg, notifier, args: send_test_message(notifier),
+    "prices": lambda cfg, notifier, args: notifier.send(price_report(make_client(cfg), cfg.get("shop_keywords") or [])),
+}
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Сканер тендеров на наружную рекламу")
-    parser.add_argument("command", choices=["run", "loop", "prices", "chatid", "test"])
+    parser.add_argument("command", choices=[*COMMANDS, "chatid", "wait"])
     parser.add_argument("--dry-run", action="store_true", help="печатать на экран, ничего не отправлять и не запоминать")
     parser.add_argument("--source", help="проверить только одну площадку, например uzex_etender")
+    parser.add_argument("--work-hours-only", action="store_true", help="run: вне рабочих часов ничего не проверять")
+    parser.add_argument("--since", default="", help="wait: когда началась прошлая проверка, секунды эпохи")
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -199,23 +262,10 @@ def main(argv: list[str] | None = None) -> None:
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
     if args.command == "chatid":
         show_chats()
-        return
-    notifier = make_notifier(args.dry_run)
-
-    if args.command == "test":
-        send_test_message(notifier)
-    elif args.command == "prices":
-        notifier.send(price_report(make_client(cfg), cfg.get("shop_keywords") or []))
-    elif args.command == "run":
-        failed = run_once(cfg, notifier, args.dry_run, args.source)
-        if failed:  # ненулевой код выхода: планировщик на сервере увидит неполный проход
-            sys.exit(f"Не удалось проверить площадки: {', '.join(failed)}")
+    elif args.command == "wait":
+        wait_for_next_check(cfg, args.since)
     else:
-        interval = int(cfg.get("interval_minutes", 20)) * 60
-        while True:
-            run_once(cfg, notifier, args.dry_run, args.source)
-            log.info("Следующая проверка через %s мин", interval // 60)
-            time.sleep(interval)
+        COMMANDS[args.command](cfg, make_notifier(args.dry_run), args)
 
 
 if __name__ == "__main__":

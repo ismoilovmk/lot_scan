@@ -1,5 +1,9 @@
 name: Скан лотов
 
+# Как это запускается само. Расписание GitHub срабатывает редко (пару раз в сутки вместо 42),
+# поэтому каждая проверка в конце сама назначает следующую: запускает этот же файл с auto=true.
+# Такой запуск сначала ждёт до следующей проверки (задание wait), потом проверяет площадки (scan).
+# Расписание ниже осталось запасным: оно поднимает цепочку, если та оборвалась.
 on:
   schedule:
     # каждые 20 минут с 07:00 до 20:59 по Ташкенту (в cron время UTC, Ташкент = UTC+5).
@@ -12,20 +16,59 @@ on:
         description: "Пробный проход: показать лоты в журнале, ничего не отправлять и не запоминать"
         type: boolean
         default: false
-
-# два прохода одновременно писали бы в одну базу — второй ждёт первого
-concurrency:
-  group: scan
-  cancel-in-progress: false
+      auto:
+        description: "Служебное, не трогать: запуск по цепочке (ставит сам бот)"
+        type: boolean
+        default: false
+      since:
+        description: "Служебное, не трогать: когда началась прошлая проверка"
+        type: string
+        default: ""
 
 permissions:
   contents: write   # база просмотренных лотов сохраняется в ветку state
+  actions: write    # проверка сама назначает следующую
 
 jobs:
+  # Только для запусков по цепочке: ждать до следующей проверки (ночью — до утра, по частям).
+  wait:
+    if: ${{ inputs.auto }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 320
+    # Ждать должен один запуск. Новый (после ручного запуска или расписания) отменяет прежнего:
+    # иначе цепочек стало бы две, и проверки пошли бы вдвое чаще.
+    concurrency:
+      group: wait
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Подождать до следующей проверки
+        run: python main.py wait --since "${{ inputs.since }}"
+
   scan:
+    needs: wait
+    # Ручной запуск и расписание не ждут (wait пропущен). Если ожидание отменили или оно упало,
+    # проверки не будет: отменивший запуск продолжит цепочку сам, а после сбоя её поднимет расписание.
+    if: ${{ !cancelled() && (needs.wait.result == 'success' || needs.wait.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # два прохода одновременно писали бы в одну базу — второй ждёт первого
+    concurrency:
+      group: scan
+      cancel-in-progress: false
     steps:
+      - name: Запомнить время начала проверки
+        id: clock
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
@@ -66,7 +109,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python main.py run ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: python main.py run ${{ inputs.dry_run && '--dry-run' || '' }} ${{ inputs.auto && '--work-hours-only' || '' }}
 
       - name: Сохранить базу
         if: ${{ always() && !inputs.dry_run && hashFiles('lots.db') != '' }}
@@ -80,3 +123,17 @@ jobs:
           tree=$(printf '100644 blob %s\tlots.db\n' "$blob" | git mktree)
           commit=$(git commit-tree "$tree" -m "База просмотренных лотов")
           git push --force origin "$commit:refs/heads/state"
+
+      # Запуск от имени самого GitHub Actions: сторонний сервис и личный токен не нужны.
+      # При отмене следующую не назначаем: это сделает тот запуск, который отменил этот.
+      - name: Назначить следующую проверку
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for attempt in 1 2 3; do
+            gh workflow run scan.yml --ref "${{ github.ref_name }}" -f auto=true -f since="${{ steps.clock.outputs.started }}" && exit 0
+            sleep 20
+          done
+          exit 1

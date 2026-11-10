@@ -390,11 +390,6 @@ def test_run_uses_per_site_pauses_from_config(project, monkeypatch, cfg_extra, e
     assert spy.host_pauses == expected
 
 
-def test_real_config_sends_summary_while_the_schedule_is_still_running():
-    cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
-    assert 7 <= cfg["daily_summary_hour"] <= 20      # расписание в scan.yml работает с 07:00 до 20:59
-
-
 def test_real_config_enables_xt_xarid_with_a_minute_between_requests():
     cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
     assert cfg["sources"]["xt_xarid"] is True
@@ -664,3 +659,101 @@ def test_cli_loop_keeps_going_after_a_failed_source(cli, monkeypatch):
 def test_cli_rejects_unknown_command(cli):
     with pytest.raises(SystemExit):
         cli("взлететь")
+
+
+# --- цепочка запусков на GitHub: каждая проверка назначает следующую ---
+
+HOURS = {"interval_minutes": 20, "work_hours": [7, 20]}
+
+
+def at(hour, minute, day=10):
+    return datetime(2026, 11, day, hour, minute, 0)
+
+
+@pytest.mark.parametrize("previous, now, expected", [
+    (at(12, 0), at(12, 6), at(12, 20)),            # через 20 минут после начала прошлой проверки
+    (at(12, 0), at(12, 25), at(12, 25)),           # прошлая проверка затянулась — сразу
+    (at(6, 50), at(6, 55), at(7, 10)),
+    (at(20, 39), at(20, 45), at(20, 59)),          # последний рабочий час — до его конца
+    (at(20, 45), at(20, 50), at(7, 0, day=11)),    # вечером — на утро следующего дня
+    (at(23, 50), at(23, 55), at(7, 0, day=11)),
+    (at(21, 0), at(2, 0, day=11), at(7, 0, day=11)),   # ночью — на утро этого же дня
+    (at(6, 30), at(6, 35), at(7, 0)),
+])
+def test_next_check_is_due_after_interval_but_only_in_work_hours(previous, now, expected):
+    assert bot.next_check(previous, now, HOURS) == expected
+
+
+def test_without_work_hours_bot_checks_around_the_clock():
+    assert bot.next_check(at(23, 50), at(23, 55), {"interval_minutes": 30}) == at(0, 20, day=11)
+    assert bot.next_check(at(3, 0), at(3, 1), {}) == at(3, 20)          # интервал по умолчанию — 20 минут
+
+
+def waiting(cli, monkeypatch, now, *argv):
+    """Запускает команду wait в заданный момент; возвращает, на сколько секунд бот уснул."""
+    slept = []
+    monkeypatch.setattr(bot, "tashkent_now", lambda: now)
+    monkeypatch.setattr(bot.time, "sleep", slept.append)
+    cli("wait", *argv)
+    return slept
+
+
+def epoch(moment):
+    return str(int(moment.replace(tzinfo=bot.TASHKENT).timestamp()))
+
+
+def test_cli_wait_sleeps_until_interval_after_previous_check(cli, monkeypatch, caplog):
+    with caplog.at_level(logging.INFO):
+        assert waiting(cli, monkeypatch, at(12, 3), "--since", epoch(at(12, 0))) == [4 * 60]   # интервал в тесте — 7 минут
+    assert "Следующая проверка в 10.11 12:07, жду 4 мин" in caplog.text
+
+
+def test_cli_wait_does_not_sleep_when_check_is_overdue(cli, monkeypatch):
+    assert waiting(cli, monkeypatch, at(12, 30), "--since", epoch(at(12, 0))) == [0]
+
+
+@pytest.mark.parametrize("argv", [(), ("--since", "")])
+def test_cli_wait_without_previous_check_sleeps_whole_interval(cli, monkeypatch, argv):
+    assert waiting(cli, monkeypatch, at(12, 0), *argv) == [7 * 60]
+
+
+def test_cli_wait_at_night_sleeps_at_most_five_hours(cli, monkeypatch):
+    cfg = {**CFG, **HOURS}
+    (cli.project / "config.yaml").write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+    assert waiting(cli, monkeypatch, at(21, 0)) == [5 * 3600]                       # до утра 10 часов
+    assert waiting(cli, monkeypatch, at(2, 0, day=11)) == [5 * 3600]                # ровно пять часов до 07:00
+    assert waiting(cli, monkeypatch, at(6, 0, day=11)) == [3600]
+
+
+def test_cli_wait_needs_no_telegram_settings(cli, monkeypatch):
+    (cli.project / ".env").unlink()
+    assert waiting(cli, monkeypatch, at(12, 0)) == [7 * 60]
+    assert cli.posts == []
+
+
+def night_config(cli):
+    cfg = {**CFG, **HOURS, "sources": {"a": True}}
+    (cli.project / "config.yaml").write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+
+
+@pytest.mark.parametrize("now, sent", [(at(6, 59), 0), (at(7, 0), 1), (at(20, 59), 1), (at(21, 0), 0)])
+def test_cli_chain_run_skips_the_check_outside_work_hours(cli, monkeypatch, caplog, now, sent):
+    night_config(cli)
+    monkeypatch.setattr(bot, "tashkent_now", lambda: now)
+    with caplog.at_level(logging.INFO):
+        cli("run", "--work-hours-only")
+    assert len(cli.posts) == sent
+    assert ("Нерабочие часы: проверку пропускаю" in caplog.text) == (sent == 0)
+
+
+def test_cli_manual_run_works_at_night_too(cli, monkeypatch):
+    night_config(cli)
+    monkeypatch.setattr(bot, "tashkent_now", lambda: at(3, 0))
+    cli("run")
+    assert len(cli.posts) == 1
+
+
+def test_real_config_work_hours_match_the_backup_schedule():
+    cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
+    assert cfg["work_hours"] == [7, 20]          # запасное расписание в scan.yml: с 07:00 до 20:59
+    assert cfg["work_hours"][0] <= cfg["daily_summary_hour"] <= cfg["work_hours"][1]
