@@ -197,3 +197,40 @@ def test_fergana_is_the_priority_region():
     assert FILTER.priority("Farg'ona viloyati, Quva tumani") == "Фергана"
     assert FILTER.priority("Тошкент шаҳри, Чилонзор тумани") == ""
     assert FILTER.region_name("Тошкент шаҳри, Чилонзор тумани") == "Ташкент"
+
+
+# --- перевозка грузов: отдельное направление со своим чатом ---
+
+@pytest.mark.parametrize("name", [
+    "Услуга по перевозке грузов",
+    "Услуга железнодорожного транспорта по перевозке грузов в вагонах",
+    "Услуга по выполнение перевозки опасных грузов",
+    "Услуга по экспедированию грузов",
+    "Грузоперевозки по Ферганской области",
+    "Оказание транспортных услуг по перевозке груза",
+    "Юк ташиш хизмати",
+    "Yuk tashish xizmati",
+    "Юкларни ташиш бўйича хизмат",
+    "Yuklarni tashish bo‘yicha xizmat",
+])
+def test_freight_transport_is_found(name):
+    assert list(FILTER.match(name)) == ["Перевозка грузов"], (name, FILTER.match(name))
+
+
+@pytest.mark.parametrize("name", [
+    "Услуга по перевозке пассажиров автобусом по заказам",
+    "Услуга по перевозке организованных групп детей",
+    "Услуга по ремонту легких грузовых автотранспортных средств",
+    "Услуга по текущему ремонту транспортных средств",
+    "Услуга по монтажу рентген-аппарата для досмотра габаритных грузов",
+    "Услуга по экскавации и перевозке горной массы",
+    "Услуга по доставке еды комплексная",
+    "Йўловчи ташиш хизмати",
+    "Автомобиль грузовой",
+])
+def test_other_transport_is_not_freight(name):
+    assert FILTER.match(name) == {}, (name, FILTER.match(name))
+
+
+def test_freight_lots_go_to_their_own_chat():
+    assert CONFIG["service_chats"] == {"Перевозка грузов": "TELEGRAM_CHAT_ID_TRANSPORT"}

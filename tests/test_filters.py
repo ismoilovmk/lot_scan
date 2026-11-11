@@ -1,6 +1,6 @@
 import pytest
 
-from filters import LotFilter, fingerprint, normalize, vocabulary_signature
+from filters import LotFilter, by_chat, fingerprint, normalize, vocabulary_signature
 from sources.base import Lot
 
 CFG = {
@@ -193,3 +193,14 @@ def test_vocabulary_signature_changes_only_with_search_settings():
     assert vocabulary_signature({}) == vocabulary_signature({"sources": {}})
     reordered = {**SERVICES, "services": dict(reversed(SERVICES["services"].items()))}
     assert vocabulary_signature(reordered) == base      # услуги переставили местами — искать то же самое
+
+
+def test_found_services_are_split_by_their_chats():
+    found = {"Баннеры": ["баннер"], "Перевозка": ["юк ташиш"], "Вывески": ["вывеск"], "Экспедирование": ["экспедир"]}
+    chats = {"Перевозка": "-200", "Экспедирование": "-200", "Нет такой услуги": "-300"}
+    assert by_chat(found, chats) == {
+        "": {"Баннеры": ["баннер"], "Вывески": ["вывеск"]},
+        "-200": {"Перевозка": ["юк ташиш"], "Экспедирование": ["экспедир"]},
+    }
+    assert by_chat(found, {}) == {"": found}
+    assert by_chat({}, chats) == {}

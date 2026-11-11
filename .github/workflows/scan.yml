@@ -109,6 +109,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID_TRANSPORT: ${{ secrets.TELEGRAM_CHAT_ID_TRANSPORT }}   # чат лотов на перевозку грузов
         run: python main.py run ${{ inputs.dry_run && '--dry-run' || '' }} ${{ inputs.auto && '--work-hours-only' || '' }}
 
       - name: Сохранить базу

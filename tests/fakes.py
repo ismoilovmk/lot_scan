@@ -71,9 +71,11 @@ class FakeSource(Source):
 class FakeNotifier:
     def __init__(self, fail=False):
         self.sent = []
+        self.chats = []
         self.fail = fail
 
-    def send(self, text):
+    def send(self, text, chat=""):
         if self.fail:
             raise RuntimeError("Telegram недоступен")
         self.sent.append(text)
+        self.chats.append(chat)       # в какой чат ушло; пусто — в основной

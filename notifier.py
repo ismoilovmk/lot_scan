@@ -83,8 +83,10 @@ def find_chats(token: str) -> list[tuple[str, str]]:
 class ConsoleNotifier:
     """Пробный режим: печатает сообщения вместо отправки."""
 
-    def send(self, text: str) -> None:
+    def send(self, text: str, chat: str = "") -> None:
         print("-" * 60)
+        if chat:
+            print(f"Чат: {chat}")
         print(text)
 
 
@@ -94,9 +96,10 @@ class TelegramNotifier:
         self.chat_id = chat_id
         self.pause = pause  # Telegram разрешает около 1 сообщения в секунду в один чат
 
-    def send(self, text: str) -> None:
+    def send(self, text: str, chat: str = "") -> None:
+        """Шлёт сообщение в чат с данным id; пусто — в основной."""
         payload = {
-            "chat_id": self.chat_id,
+            "chat_id": chat or self.chat_id,
             "text": text[:4000],
             "parse_mode": "HTML",
             "disable_web_page_preview": True,

@@ -216,3 +216,26 @@ def test_priority_region_is_marked_above_the_title():
     assert lines[:2] == ["🟢 Фергана &amp; область", "<b>Баннер</b>"]
     assert "Услуга: Баннеры &lt;1&gt;" in lines
     assert format_lot(lot, {"Баннеры": ["баннер"]}, "").splitlines()[0] == "<b>Баннер</b>"
+
+
+def test_console_shows_which_chat_the_message_is_for(capsys):
+    ConsoleNotifier().send("лот", "TELEGRAM_CHAT_ID_TRANSPORT")
+    out = capsys.readouterr().out
+    assert "Чат: TELEGRAM_CHAT_ID_TRANSPORT" in out and "лот" in out
+    ConsoleNotifier().send("лот")
+    assert "Чат:" not in capsys.readouterr().out
+
+
+def test_telegram_message_can_go_to_another_chat(monkeypatch):
+    posts = []
+
+    class Ok:
+        status_code, ok = 200, True
+
+    monkeypatch.setattr(notifier.requests, "post", lambda url, json, timeout: posts.append(json["chat_id"]) or Ok())
+    monkeypatch.setattr(notifier.time, "sleep", lambda seconds: None)
+    bot = TelegramNotifier("t", "-100")
+    bot.send("в основной")
+    bot.send("в другой", "-200")
+    bot.send("снова в основной", "")
+    assert posts == ["-100", "-200", "-100"]

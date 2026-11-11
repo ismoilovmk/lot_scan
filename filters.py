@@ -59,6 +59,14 @@ def fingerprint(lot) -> str:
     return f"{title}|{normalize(lot.customer)}|{price:.0f}"
 
 
+def by_chat(found: dict[str, list[str]], service_chats: dict[str, str]) -> dict[str, dict[str, list[str]]]:
+    """Делит найденные услуги по чатам: {чат: {услуга: слова}}. Чат «» — основной."""
+    groups: dict[str, dict[str, list[str]]] = {}
+    for service, words in found.items():
+        groups.setdefault(service_chats.get(service, ""), {})[service] = words
+    return groups
+
+
 class LotFilter:
     def __init__(self, cfg: dict):
         self.services = _groups(cfg.get("services"), _rules)

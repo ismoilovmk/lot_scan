@@ -74,6 +74,27 @@ def test_lot_from_priority_region_is_marked(storage):
     assert [text.splitlines()[0] for text in notifier.sent] == ["🟢 Фергана", "<b>Изготовление баннера</b>"]
 
 
+TWO_CHATS = {**CFG, "services": {"Реклама": ["баннер"], "Перевозка": ["юк ташиш"]}, "service_chats": {"Перевозка": "-200"}}
+
+
+def test_lot_goes_to_the_chat_of_its_service(storage):
+    lots = [make_lot("1", customer="А"), make_lot("2", title="Юк ташиш хизмати", customer="Б")]
+    stats, notifier = scan(FakeSource(lots), storage, cfg=TWO_CHATS)
+    assert stats["sent"] == 2
+    assert notifier.chats == ["", "-200"]
+    assert "Услуга: Перевозка" in notifier.sent[1] and "Реклама" not in notifier.sent[1]
+
+
+def test_lot_about_services_of_two_chats_goes_to_both(storage):
+    lot = make_lot("1", title="Баннер ва юк ташиш хизмати")
+    stats, notifier = scan(FakeSource([lot]), storage, cfg=TWO_CHATS)
+    assert stats["sent"] == 1                                   # лот один, сообщений два
+    assert notifier.chats == ["", "-200"]
+    assert "Услуга: Реклама" in notifier.sent[0] and "Перевозка" not in notifier.sent[0]
+    assert "Услуга: Перевозка" in notifier.sent[1]
+    assert scan(FakeSource([lot]), storage, cfg=TWO_CHATS)[1].sent == []
+
+
 def test_same_lot_under_another_number_is_sent_once(storage):
     copy = {"customer": "Хокимият", "price": 500.0}
     source = FakeSource([make_lot("1", **copy), make_lot("2", title=" изготовление БАННЕРА ", **copy)])
@@ -356,6 +377,45 @@ def test_run_without_summary_setting_sends_no_summary(project, monkeypatch):
     notifier = FakeNotifier()
     bot.run_once({**CFG, "sources": {"a": True}}, notifier, dry_run=False)
     assert notifier.sent == []
+
+
+TRANSPORT = {**CFG, "sources": {"a": True}, "services": {"Реклама": ["баннер"], "Перевозка": ["юк ташиш"]},
+             "service_chats": {"Перевозка": "TELEGRAM_CHAT_ID_TRANSPORT"}}
+
+
+def transport_lots(monkeypatch):
+    forget_env(monkeypatch, "TELEGRAM_CHAT_ID_TRANSPORT")
+    lots = [make_lot("1", source="a", customer="А"), make_lot("2", source="a", title="Юк ташиш хизмати", customer="Б")]
+    use_sources(monkeypatch, FakeSource(lots, key="a"))
+
+
+def test_service_chat_is_taken_from_environment(project, monkeypatch):
+    transport_lots(monkeypatch)
+    monkeypatch.setenv("TELEGRAM_CHAT_ID_TRANSPORT", "-200")
+    notifier = FakeNotifier()
+    bot.run_once(TRANSPORT, notifier, dry_run=False)
+    assert notifier.chats == ["", "-200"]
+
+
+def test_service_without_its_chat_waits_until_the_chat_is_set(project, monkeypatch, caplog):
+    transport_lots(monkeypatch)
+    first, second, third = FakeNotifier(), FakeNotifier(), FakeNotifier()
+    with caplog.at_level(logging.WARNING):
+        bot.run_once(TRANSPORT, first, dry_run=False)
+    assert first.chats == [""]                                  # реклама ушла, перевозка — нет
+    assert "Перевозка: не задан TELEGRAM_CHAT_ID_TRANSPORT, лоты по этой услуге пока не ищу" in caplog.text
+    monkeypatch.setenv("TELEGRAM_CHAT_ID_TRANSPORT", "-200")
+    bot.run_once(TRANSPORT, second, dry_run=False)
+    bot.run_once(TRANSPORT, third, dry_run=False)
+    assert second.chats == ["-200"] and "<b>Юк ташиш хизмати</b>" in second.sent[0]   # лот не потерян
+    assert third.sent == []
+
+
+def test_dry_run_shows_lots_of_every_chat_even_without_settings(project, monkeypatch):
+    transport_lots(monkeypatch)
+    notifier = FakeNotifier()
+    bot.run_once(TRANSPORT, notifier, dry_run=True)
+    assert notifier.chats == ["", "TELEGRAM_CHAT_ID_TRANSPORT"]
 
 
 def test_run_passes_dry_run_through(project, monkeypatch):

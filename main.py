@@ -21,7 +21,7 @@ from pathlib import Path
 import yaml
 
 import health
-from filters import LotFilter, fingerprint, vocabulary_signature
+from filters import LotFilter, by_chat, fingerprint, vocabulary_signature
 from http_client import HttpClient
 from notifier import ConsoleNotifier, TelegramNotifier, find_chats, format_lot
 from sources import ALL_SOURCES
@@ -80,21 +80,45 @@ def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: boo
         except RuntimeError as exc:
             log.warning("Лот %s %s: подробности не получены (%s), попробую в следующий раз", lot.source, lot.lot_id, exc)
             continue
-        services = lot_filter.match(lot.search_text())
-        text = format_lot(lot, services, lot_filter.priority(lot.region))
-        sent = bool(services) and deliver(lot, text, storage, notifier, now)
+        messages = lot_messages(lot, lot_filter, cfg)
+        sent = bool(messages) and deliver(lot, messages, storage, notifier, now)
         stats["sent"] += sent
         if not dry_run:
             storage.mark(lot.source, lot.lot_id, sent, lot.title, fingerprint(lot), lot.deadline)
     return stats
 
 
-def deliver(lot, text: str, storage, notifier, now: datetime) -> bool:
-    """Отправляет сообщение о лоте, если такой же ещё не отправлялся. True — отправлен."""
+def lot_messages(lot, lot_filter, cfg: dict) -> list[tuple[str, str]]:
+    """Сообщения о лоте: [(чат, текст)], по одному на каждый чат, чьи услуги нашлись. Пусто — лот не подходит."""
+    groups = by_chat(lot_filter.match(lot.search_text()), cfg.get("service_chats") or {})
+    priority = lot_filter.priority(lot.region)
+    return [(chat, format_lot(lot, services, priority)) for chat, services in groups.items()]
+
+
+def resolve_chats(cfg: dict, env, dry_run: bool) -> dict:
+    """В service_chats вместо имён переменных окружения ставит id чатов.
+
+    Услуга, чей чат ещё не задан, выключается: её лоты не теряются, а ждут. Когда чат появится,
+    настройки поиска изменятся, и бот проверит открытые лоты заново.
+    """
+    services, chats = dict(cfg.get("services") or {}), {}
+    for service, name in (cfg.get("service_chats") or {}).items():
+        chat = env.get(name) or (name if dry_run else "")   # в пробном проходе чат называем по имени переменной
+        if chat:
+            chats[service] = chat
+        else:
+            services.pop(service, None)
+            log.warning("%s: не задан %s, лоты по этой услуге пока не ищу", service, name)
+    return {**cfg, "services": services, "service_chats": chats}
+
+
+def deliver(lot, messages: list[tuple[str, str]], storage, notifier, now: datetime) -> bool:
+    """Отправляет сообщения о лоте, если такой же ещё не отправлялся. True — отправлен."""
     if storage.is_duplicate(fingerprint(lot), now.isoformat(timespec="seconds")):
         log.info("Лот %s %s: такой же уже отправлен, пропускаю", lot.source, lot.lot_id)
         return False
-    notifier.send(text)  # при ошибке лот не помечается и уйдёт в следующий раз
+    for chat, text in messages:
+        notifier.send(text, chat)  # при ошибке лот не помечается и уйдёт в следующий раз
     return True
 
 
@@ -120,6 +144,7 @@ def check_source(source, client, cfg, lot_filter, storage, notifier, dry_run: bo
 
 def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> list[str]:
     """Один проход по площадкам. Возвращает ключи площадок, которые проверить не удалось."""
+    cfg = resolve_chats(cfg, os.environ, dry_run)
     client = make_client(cfg)
     lot_filter = LotFilter(cfg)
     storage = Storage(str(ROOT / "lots.db"), tashkent_now)
