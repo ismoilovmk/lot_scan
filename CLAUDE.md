@@ -36,6 +36,23 @@ It runs on GitHub Actions, not on anyone's computer: `.github/workflows/scan.yml
    tests on GitHub and the next scheduled check picks the new code up by itself.
 4. Be gentle with the sites: keep the pauses in `config.yaml`, do not hammer them while exploring.
 
+## The `.env` file
+
+`.env` sits in the project root next to `main.py`. Git ignores it, so it is never in the repository and a fresh
+clone does not have one. It holds `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (advertising group) and
+`TELEGRAM_CHAT_ID_TRANSPORT` (freight group); `.env.example` shows the format. The same values are stored on
+GitHub as Actions secrets, which cannot be read back.
+
+- **You do not need `.env` for development.** Tests, `--dry-run` passes and exploring sites read no Telegram
+  settings. If a command stops with "Не заданы TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID", add `--dry-run` instead of
+  asking for the file.
+- Only `run`, `loop`, `test` and `prices` without `--dry-run`, and `chatid`, need the token.
+- If the owner did share `.env` with this computer, rule 1 below still holds: a real run from here duplicates
+  every lot in both groups. A real run from a second computer is right only after the owner has decided to move
+  the bot there and the GitHub schedule has been switched off.
+- Do not print the token, copy it into another file, or commit it. Do not ask the user to paste it into the chat.
+  If it leaks: @BotFather → `/revoke`, then update the GitHub secret and every `.env`.
+
 ## Layout
 
 | File | Role |
