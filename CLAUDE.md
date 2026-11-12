@@ -93,6 +93,7 @@ for lots that passed the region filter. Find the site's JSON API in the browser'
 - xarid.uzex.uz — reduction auction (Auksion), best-offer selection under Resolution 69
 - xt-xarid.uz — auction, selection, request for proposals, tender
 - tendergpt.uz — purchases of private companies
+- ebirja.uz — auction, local auction, selection, tender, request for proposals
 
 ## Open work that needs an Uzbek IP address
 
