@@ -16,6 +16,10 @@ on:
         description: "Пробный проход: показать лоты в журнале, ничего не отправлять и не запоминать"
         type: boolean
         default: false
+      full_shop:
+        description: "Milliy do'kon: просмотреть все предложения за раз (около получаса)"
+        type: boolean
+        default: false
       auto:
         description: "Служебное, не трогать: запуск по цепочке (ставит сам бот)"
         type: boolean
@@ -59,7 +63,7 @@ jobs:
     # проверки не будет: отменивший запуск продолжит цепочку сам, а после сбоя её поднимет расписание.
     if: ${{ !cancelled() && (needs.wait.result == 'success' || needs.wait.result == 'skipped') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 75   # обычная проверка — до 15 минут, полный просмотр Milliy do'kon — около получаса сверху
     # два прохода одновременно писали бы в одну базу — второй ждёт первого
     concurrency:
       group: scan
@@ -110,7 +114,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CHAT_ID_TRANSPORT: ${{ secrets.TELEGRAM_CHAT_ID_TRANSPORT }}   # чат лотов на перевозку грузов
-        run: python main.py run ${{ inputs.dry_run && '--dry-run' || '' }} ${{ inputs.auto && '--work-hours-only' || '' }}
+        run: python main.py run ${{ inputs.dry_run && '--dry-run' || '' }} ${{ inputs.auto && '--work-hours-only' || '' }} ${{ inputs.full_shop && '--full-shop' || '' }}
 
       - name: Сохранить базу
         if: ${{ always() && !inputs.dry_run && hashFiles('lots.db') != '' }}

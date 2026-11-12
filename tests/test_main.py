@@ -844,3 +844,21 @@ def test_real_config_work_hours_match_the_backup_schedule():
     cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
     assert cfg["work_hours"] == [7, 20]          # запасное расписание в scan.yml: с 07:00 до 20:59
     assert cfg["work_hours"][0] <= cfg["daily_summary_hour"] <= cfg["work_hours"][1]
+
+
+class CfgSpy(FakeSource):
+    """Площадка, которая запоминает, с какими настройками её проверяли."""
+
+    def list_lots(self, client, cfg):
+        self.per_pass = cfg.get("shop_offers_per_pass")
+        return super().list_lots(client, cfg)
+
+
+@pytest.mark.parametrize("argv, expected", [(("run",), 300), (("run", "--full-shop"), 10 ** 9)])
+def test_cli_full_shop_checks_every_offer_in_one_pass(cli, monkeypatch, argv, expected):
+    spy = CfgSpy([], key="a")
+    use_sources(monkeypatch, spy)
+    cfg = {**CFG, "sources": {"a": True}, "shop_offers_per_pass": 300}
+    (cli.project / "config.yaml").write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+    cli(*argv)
+    assert spy.per_pass == expected
