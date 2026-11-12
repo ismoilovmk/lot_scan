@@ -2,7 +2,7 @@ import pytest
 from fakes import FakeClient
 
 from sources import uzex_shop
-from sources.uzex_shop import ShopLots
+from sources.uzex_shop import EShopLots, ShopLots
 
 SHOP = "https://xarid-api-shop.uzex.uz/Common"
 CFG = {"shop_keywords": ["баннер"], "interval_minutes": 20, "shop_offers_per_pass": 300}
@@ -17,14 +17,21 @@ def offer(offer_id, name="Услуга по установке баннера"):
     return {"id": offer_id, "product_name": f" {name} ", "display_no": f"SO{offer_id}"}
 
 
-def shop(offers, lots=None, regions=None, details=None):
-    """Ведёт себя как Milliy do'kon: предложения по слову, торги по предложению, районы и карточка торга."""
+LOCAL = {"is_local_manufacturer": 1, "producer_country_id": 244}   # так сайт отбирает Milliy do'kon
+
+
+def shop(offers, lots=None, regions=None, details=None, scope=LOCAL):
+    """Ведёт себя как магазин: предложения по слову, торги по предложению, районы и карточка торга.
+
+    scope — чем запрос списка должен отличать один магазин от другого (у Elektron do'kon отбора нет).
+    """
     lots, regions, details = lots or {}, regions or {}, details or {}
 
     def handler(method, url, body):
         name, _, key = url[len(SHOP) + 1:].partition("/")
         if name == "GetOffersList":
-            assert method == "POST" and body["is_local_manufacturer"] == 1
+            assert method == "POST"
+            assert {key: body[key] for key in body if key not in ("keyword", "from", "to")} == scope
             rows = offers.get(body["keyword"], [])
             return [{**row, "total_count": len(rows)} for row in rows[body["from"] - 1:body["to"]]]
         assert method == "GET"
@@ -136,3 +143,17 @@ def test_details_add_what_the_supplier_wrote_about_the_offer(monkeypatch):
     lot = ShopLots().enrich(client, lot)
     assert lot.details == "уф баннер чоп этиш"
     assert ShopLots().enrich(FakeClient(shop({}, details={5878738: {"condition": None}})), lot).details == ""
+
+
+def test_elektron_dokon_is_the_same_shop_without_the_local_manufacturer_filter(monkeypatch):
+    monkeypatch.setattr(uzex_shop.time, "time", lambda: 0)
+    client = FakeClient(shop({"баннер": [offer(7)]}, {7: [REFUSED, OPEN]}, {5878738: FERGANA}, scope={}))
+    (lot,) = EShopLots().list_lots(client, CFG)
+    assert (lot.source, lot.source_title) == ("uzex_eshop", "Elektron do'kon (торг по предложению)")
+    assert (lot.lot_id, lot.title, lot.price) == ("5878738", "Услуга по установке баннера", 3000000.0)
+    assert lot.url == "https://xarid.uzex.uz/shop/lot-details/5878738"
+
+
+def test_both_shops_are_scanned():
+    from sources import ALL_SOURCES
+    assert {"uzex_shop", "uzex_eshop"} <= {source.key for source in ALL_SOURCES}

@@ -13,6 +13,7 @@ from .base import Lot, Source, paged
 
 ORIGIN = "https://xarid.uzex.uz"
 API = "https://xarid-api-shop.uzex.uz/Common/GetOffersList"
+LOCAL = {"is_local_manufacturer": 1, "producer_country_id": 244}  # отбор Milliy do'kon: местные производители
 
 
 def _num(value: float) -> str:
@@ -21,7 +22,7 @@ def _num(value: float) -> str:
 
 def fetch_offers(client, keyword: str, max_rows: int = 300) -> tuple[list[dict], int]:
     """Предложения местных производителей по слову. Возвращает (строки, всего на сайте)."""
-    body = {"is_local_manufacturer": 1, "producer_country_id": 244, "keyword": keyword}
+    body = {**LOCAL, "keyword": keyword}
     rows = list(paged(client, API, ORIGIN, body, page_size=100, max_rows=max_rows))
     total = rows[0]["total_count"] if rows else 0
     return rows, total
@@ -56,9 +57,8 @@ PAGE = 12  # больше строк за запрос магазин не от�
 NEW = 1    # состояние торга «Новый»: идёт приём цен
 
 
-def _offers(client, keyword: str, start: int) -> list[dict]:
-    body = {"is_local_manufacturer": 1, "producer_country_id": 244, "keyword": keyword,
-            "from": start, "to": start + PAGE - 1}
+def _offers(client, scope: dict, keyword: str, start: int) -> list[dict]:
+    body = {**scope, "keyword": keyword, "from": start, "to": start + PAGE - 1}
     return client.post_json(API, ORIGIN, body)
 
 
@@ -78,11 +78,12 @@ class ShopLots(Source):
     """
     key = "uzex_shop"
     title = "Milliy do'kon (торг по предложению)"
+    scope = LOCAL  # чем запрос списка предложений отличает этот магазин
 
     def list_lots(self, client, cfg):
         checked = set()
         for keyword, start in self._part(client, cfg):
-            for offer in _offers(client, keyword, start):
+            for offer in _offers(client, self.scope, keyword, start):
                 if offer["id"] not in checked:
                     checked.add(offer["id"])
                     yield from self._trades(client, offer)
@@ -91,7 +92,7 @@ class ShopLots(Source):
         """Страницы списка предложений на этот проход: [(слово, с какой строки)]."""
         pages = []
         for keyword in cfg.get("shop_keywords") or []:
-            rows = _offers(client, keyword, 1)
+            rows = _offers(client, self.scope, keyword, 1)
             total = rows[0]["total_count"] if rows else 0
             pages += [(keyword, start) for start in range(1, total + 1, PAGE)]
         size = max(1, int(cfg.get("shop_offers_per_pass", 300)) // PAGE)
@@ -120,3 +121,10 @@ class ShopLots(Source):
         data = client.get_json(f"{SHOP}/GetLot/{lot.lot_id}", ORIGIN)
         lot.details = data.get("condition") or ""
         return lot
+
+
+class EShopLots(ShopLots):
+    """Elektron do'kon: тот же магазин и те же торги, но предложения любых поставщиков, а не только местных."""
+    key = "uzex_eshop"
+    title = "Elektron do'kon (торг по предложению)"
+    scope = {}

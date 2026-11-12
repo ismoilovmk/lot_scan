@@ -97,6 +97,8 @@ for lots that passed the region filter. Find the site's JSON API in the browser'
 - Milliy do'kon on xarid.uzex.uz (`ShopLots` in `sources/uzex_shop.py`) — trades on supplier offers. The shop has
   no public list of trades, so the bot finds offers by `shop_keywords` and reads each offer's trades, one part of
   the offers per pass, chosen by the clock. The owner's father says most of the relevant lots are here.
+- Elektron do'kon on xarid.uzex.uz (`EShopLots`, key `uzex_eshop`) — the same shop without the local-manufacturer
+  filter: a separate set of offers, same trades and the same trade page. It has its own part per pass.
 - new.cooperation.uz — e-catalog price requests to local manufacturers (`sources/cooperation.py`). It opens only
   from an Uzbek IP, so it is off in `config.yaml` and GitHub does not scan it. From a computer in Uzbekistan run
   `python main.py loop --source cooperation_catalog`: that checks only this platform, so nothing arrives twice.
@@ -114,9 +116,12 @@ confirmed to open from a computer in Uzbekistan.
 | `new-xarid.uzex.uz` | beta front-end of xarid | uses the same APIs as xarid.uzex.uz; nothing new to scan |
 | `api.xt-xarid.uz` | already scanned | from Uzbekistan 3 requests 3 s apart all succeeded; on GitHub `host_pauses` must stay 65 |
 
-Not explored for other reasons: xarid.uzex.uz sections To'g'ridan-to'g'ri elektron shartnoma, Davlat xaridlari,
-Hadli kelishuv, Reja jadval; tender pages of banks (nbu.uz and others). Elektron do'kon (the non-national shop)
-works like Milliy do'kon and is not scanned yet.
+Not explored for other reasons: tender pages of banks (nbu.uz and others).
+
+Looked at on 2026-11-12 and left out on purpose: To'g'ridan-to'g'ri elektron shartnoma and Davlat xaridlari are
+registries of contracts already signed (the supplier is named); Hadli kelishuv and Master-plan on etender had
+0 lots; IMI-XDMI has 276 purchases with no region; Reja jadval is purchase plans, not lots (2 million rows) —
+it could serve as an early signal if the owner asks for it.
 
 A source that works only from Uzbekistan cannot run on GitHub: keep it `false` in `config.yaml` and run it from
 Uzbekistan with `--source`, as `cooperation_catalog` does. On 2026-11-11 the whole bot ran from a laptop in

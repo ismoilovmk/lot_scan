@@ -249,7 +249,7 @@ def run_command(cfg: dict, notifier, args) -> None:
     if args.work_hours_only and not in_work_hours(tashkent_now(), cfg):
         log.info("Нерабочие часы: проверку пропускаю")
         return
-    if args.full_shop:  # разовый полный просмотр Milliy do'kon вместо очередной части
+    if args.full_shop:  # разовый полный просмотр обоих магазинов вместо очередной части
         cfg = {**cfg, "shop_offers_per_pass": 10 ** 9}
     failed = run_once(cfg, notifier, args.dry_run, args.source)
     if failed:  # ненулевой код выхода: планировщик на сервере увидит неполный проход
@@ -284,7 +284,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="печатать на экран, ничего не отправлять и не запоминать")
     parser.add_argument("--source", help="проверить только одну площадку, например uzex_etender")
     parser.add_argument("--work-hours-only", action="store_true", help="run: вне рабочих часов ничего не проверять")
-    parser.add_argument("--full-shop", action="store_true", help="run: просмотреть все предложения Milliy do'kon за раз")
+    parser.add_argument("--full-shop", action="store_true", help="run: просмотреть все предложения Milliy и Elektron do'kon за раз")
     parser.add_argument("--since", default="", help="wait: когда началась прошлая проверка, секунды эпохи")
     args = parser.parse_args(argv)
 
