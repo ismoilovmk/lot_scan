@@ -17,7 +17,7 @@ on:
         type: boolean
         default: false
       full_shop:
-        description: "Milliy do'kon: просмотреть все предложения за раз (около получаса)"
+        description: "Milliy do'kon: просмотреть все предложения за раз (больше часа)"
         type: boolean
         default: false
       auto:
@@ -63,7 +63,7 @@ jobs:
     # проверки не будет: отменивший запуск продолжит цепочку сам, а после сбоя её поднимет расписание.
     if: ${{ !cancelled() && (needs.wait.result == 'success' || needs.wait.result == 'skipped') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 75   # обычная проверка — до 15 минут, полный просмотр Milliy do'kon — около получаса сверху
+    timeout-minutes: 120   # обычная проверка — до 15 минут, полный просмотр Milliy do'kon занял 73 минуты (12.11.2026)
     # два прохода одновременно писали бы в одну базу — второй ждёт первого
     concurrency:
       group: scan
