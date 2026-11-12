@@ -94,25 +94,29 @@ for lots that passed the region filter. Find the site's JSON API in the browser'
 - xt-xarid.uz — auction, selection, request for proposals, tender
 - tendergpt.uz — purchases of private companies
 - ebirja.uz — auction, local auction, selection, tender, request for proposals
+- new.cooperation.uz — e-catalog price requests to local manufacturers (`sources/cooperation.py`). It opens only
+  from an Uzbek IP, so it is off in `config.yaml` and GitHub does not scan it. From a computer in Uzbekistan run
+  `python main.py loop --source cooperation_catalog`: that checks only this platform, so nothing arrives twice.
 
 ## Open work that needs an Uzbek IP address
 
-Development so far happened from South Korea, and GitHub's servers are abroad too. From there these do not open
-(the host name resolves, the connection times out), so they are not connected. Nobody has confirmed yet that they
-open from inside Uzbekistan — checking that is the first step.
+GitHub's servers are abroad, where these do not open (the connection times out). On 2026-11-11 all of them were
+confirmed to open from a computer in Uzbekistan.
 
 | Target | What it is | Known so far |
 |---|---|---|
-| `cooperation.uz` | purchases from local manufacturers; named as one of the three main platforms | nothing explored |
-| `xarid-api-auctionx.uzex.uz` | API behind xarid.uzex.uz → Mahalliy auksion (`/new-auction/list`), auctions for local manufacturers | endpoints unknown |
-| `xarid-api-prequest.uzex.uz` | API behind xarid.uzex.uz → Taklif so'rovi (request for proposals) | endpoints unknown |
-| `new-xarid.uzex.uz` | new version of xarid | nothing explored |
-| `api.xt-xarid.uz` | already scanned | from abroad it allows one request per 60 s; `host_pauses` in `config.yaml` is 65. Try a small value from Uzbekistan |
+| `new.cooperation.uz` other sections | auction, local auction, request for proposals, tender, selection | APIs `cabinet.cooperation.uz/api/{auction,local-auction,bid-flow}/public/lots`, `/api/{tender,selection}/public`; almost empty when checked |
+| `xarid-api-auctionx.uzex.uz` | xarid.uzex.uz → Mahalliy auksion (`/new-auction/list`) | list: `/api/Lot/GetList`; 1 open lot when checked |
+| `xarid-api-prequest.uzex.uz` | xarid.uzex.uz → Taklif so'rovi (`/request-proposal/3/list`) | list: `/api/Public/GetLots`; ~1000 open lots with customer and price — the most useful next source |
+| `new-xarid.uzex.uz` | beta front-end of xarid | uses the same APIs as xarid.uzex.uz; nothing new to scan |
+| `api.xt-xarid.uz` | already scanned | from Uzbekistan 3 requests 3 s apart all succeeded; on GitHub `host_pauses` must stay 65 |
 
 Not explored for other reasons: xarid.uzex.uz sections To'g'ridan-to'g'ri elektron shartnoma, Davlat xaridlari,
 Hadli kelishuv, Reja jadval; tender pages of banks (nbu.uz and others). Milliy do'kon and Elektron do'kon are
 supplier storefronts, not orders — the bot only builds a competitor price report from Milliy do'kon.
 
-A source that works only from Uzbekistan cannot run on GitHub. Running the whole bot from an Uzbek server or
-computer is a decision for the owner (Muhammadbilol): the scheduler, the `state` database and the secrets would
-have to move together, otherwise lots arrive twice.
+A source that works only from Uzbekistan cannot run on GitHub: keep it `false` in `config.yaml` and run it from
+Uzbekistan with `--source`, as `cooperation_catalog` does. On 2026-11-11 the whole bot ran from a laptop in
+Uzbekistan for a day; on 2026-11-12 the owner moved it back to GitHub and that laptop's database became the
+`state` branch. Moving the whole bot again is the owner's decision (Muhammadbilol): the scheduler, the `state`
+database and the secrets have to move together, otherwise lots arrive twice.

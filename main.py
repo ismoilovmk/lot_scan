@@ -255,11 +255,16 @@ def run_command(cfg: dict, notifier, args) -> None:
 
 
 def loop_command(cfg: dict, notifier, args) -> None:
-    interval = int(cfg.get("interval_minutes", 20)) * 60
+    """Проверять постоянно: каждые interval_minutes, но только в рабочие часы (ночью бот спит до утра)."""
     while True:
-        run_once(cfg, notifier, args.dry_run, args.source)
-        log.info("Следующая проверка через %s мин", interval // 60)
-        time.sleep(interval)
+        started = tashkent_now()
+        if in_work_hours(started, cfg):
+            run_once(cfg, notifier, args.dry_run, args.source)
+        now = tashkent_now()
+        due = next_check(started, now, cfg)
+        seconds = round((due - now).total_seconds())
+        log.info("Следующая проверка в %s, жду %s мин", due.strftime("%d.%m %H:%M"), seconds // 60)
+        time.sleep(seconds)
 
 
 # Команды, которым нужен Telegram (или экран при --dry-run)

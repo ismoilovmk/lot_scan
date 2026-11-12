@@ -8,3 +8,4 @@ target/
 .coverage
 *.lcov
 htmlcov/
+.venv/

@@ -460,6 +460,13 @@ def test_real_config_enables_xt_xarid_with_a_minute_between_requests():
         assert key in [source.key for source in bot.ALL_SOURCES]
 
 
+def test_real_config_keeps_cooperation_catalog_off_on_github_and_lets_its_lots_through():
+    cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
+    assert cfg["sources"]["cooperation_catalog"] is False   # с серверов GitHub площадка не открывается
+    assert "cooperation_catalog" in [source.key for source in bot.ALL_SOURCES]   # но по --source проверяется
+    assert cfg["allow_unknown_region"] is True   # регион в этом каталоге не показывается: иначе лоты не пройдут
+
+
 # --- .env ---
 
 def test_env_file_is_loaded_without_overriding_existing_values(tmp_path, monkeypatch):
@@ -811,6 +818,26 @@ def test_cli_manual_run_works_at_night_too(cli, monkeypatch):
     monkeypatch.setattr(bot, "tashkent_now", lambda: at(3, 0))
     cli("run")
     assert len(cli.posts) == 1
+
+
+def test_cli_loop_sleeps_through_the_night_and_checks_only_in_work_hours(cli, monkeypatch, caplog, capsys):
+    # на компьютере бот работает командой loop: ночью он не проверяет площадки и ничего не шлёт
+    night_config(cli)
+    clock, naps = [at(21, 0)], []
+
+    def nap(seconds):
+        naps.append(seconds)
+        clock[0] += timedelta(seconds=seconds)
+        if len(naps) == 2:
+            raise StopLoop
+
+    monkeypatch.setattr(bot, "tashkent_now", lambda: clock[0])
+    monkeypatch.setattr(bot.time, "sleep", nap)
+    with caplog.at_level(logging.INFO), pytest.raises(StopLoop):
+        cli("loop", "--dry-run")
+    assert naps == [10 * 3600, 20 * 60]         # до 07:00, потом обычный интервал
+    assert capsys.readouterr().out.count("<b>Изготовление баннера</b>") == 1   # лот показан утром, а не в 21:00
+    assert "Следующая проверка в 11.11 07:00" in caplog.text
 
 
 def test_real_config_work_hours_match_the_backup_schedule():
