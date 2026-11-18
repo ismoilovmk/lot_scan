@@ -15,25 +15,33 @@ A second direction, freight transport, goes to its own Telegram group.
 
 ## How it runs in production
 
-It runs on GitHub Actions, not on anyone's computer: `.github/workflows/scan.yml`.
+Since 2026-11-18 it runs on a VPS in Tashkent (the brother's server, Teleport DC), not on GitHub Actions.
 
-- Every check ends by starting the next one (`workflow_dispatch` with `auto=true`). That run first waits
-  (`python main.py wait`), then scans. GitHub's own cron fires only about twice a day here, so it is just a backup
-  that restarts the chain.
-- Checks run every 20 minutes, 07:00–20:59 Tashkent time (`work_hours` in `config.yaml`).
-- The database of seen lots (`lots.db`) lives in the orphan branch `state`, one force-pushed commit.
-- Secrets `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_CHAT_ID_TRANSPORT` are GitHub Actions secrets.
-  The repository is public: never commit a token or a chat ID, and never paste them into a chat.
+- Service `lot-scan.service` (systemd, user `dismoilov`) runs `python main.py loop` in `/home/dismoilov/lot_scan`
+  with Python 3.12 from `.venv` (installed with `uv`; the system Python there is 3.8). It restarts by itself
+  after a crash or a reboot.
+- `loop` checks every 20 minutes, 07:00–20:59 Tashkent time (`work_hours` in `config.yaml`) and sleeps at night.
+- The database of seen lots is the file `lots.db` in that folder; `.env` with the token is next to it (mode 600).
+- SSH from the owner's computer: `ssh uz_vps` (entry in `~/.ssh/config`). Another project of the brother
+  ("Bedana shop", `bedana.service`, Caddy) lives on the same server: do not touch it.
+- **New code does not reach the bot by itself.** After pushing to `main`:
+  `ssh uz_vps 'cd ~/lot_scan && git pull && sudo systemctl restart lot-scan'`.
+  Log: `ssh uz_vps 'journalctl -u lot-scan -n 50 -o cat'`.
+- The GitHub workflow `.github/workflows/scan.yml` («Скан лотов») is disabled and must stay disabled while the
+  server runs: both together would send every lot twice. The branch `state` holds the database as it was at the
+  move (2026-11-17) and is no longer updated. To go back to GitHub: stop the service, push the server's
+  `lots.db` to `state`, enable the workflow.
+- The repository is public: never commit a token or a chat ID, and never paste them into a chat.
 
 ## Rules that are easy to break
 
-1. **Do not run `python main.py run` or `loop` without `--dry-run` on your computer** while GitHub is running.
+1. **Do not run `python main.py run` or `loop` without `--dry-run` on your computer** while the server is running.
    A local run has its own `lots.db`, so every lot would arrive in the Telegram groups a second time.
    `--dry-run` prints lots to the screen, sends nothing and remembers nothing. It needs no `.env`.
 2. Changes go test-first: write the failing test, see it fail, make it pass. Then `sh quality.sh crap`,
    `sh quality.sh dry`, `sh quality.sh mutate` — CRAP below 10, no duplication, no surviving mutants.
 3. Small commits that say why, what changed and how it was proved (see `git log`). Pushing to `main` runs the
-   tests on GitHub and the next scheduled check picks the new code up by itself.
+   tests on GitHub; then update the server (see above).
 4. Be gentle with the sites: keep the pauses in `config.yaml`, do not hammer them while exploring.
 
 ## The `.env` file
@@ -91,6 +99,9 @@ for lots that passed the region filter. Find the site's JSON API in the browser'
 
 - etender.uzex.uz — tenders, best-offer selection, civil contracts
 - xarid.uzex.uz — reduction auction (Auksion), best-offer selection under Resolution 69
+- xarid.uzex.uz — request for proposals (Taklif so'rovi) and local auction (Mahalliy auksion), `sources/uzex_local.py`.
+  They open only from Uzbekistan, which the server provides. Taklif so'rovi has no region field: the region is
+  read from the customer's address with street names removed (a street called «Тошкент кўчаси» is not Tashkent).
 - xt-xarid.uz — auction, selection, request for proposals, tender
 - tendergpt.uz — purchases of private companies
 - ebirja.uz — auction, local auction, selection, tender, request for proposals
@@ -111,8 +122,6 @@ confirmed to open from a computer in Uzbekistan.
 | Target | What it is | Known so far |
 |---|---|---|
 | `new.cooperation.uz` other sections | auction, local auction, request for proposals, tender, selection | APIs `cabinet.cooperation.uz/api/{auction,local-auction,bid-flow}/public/lots`, `/api/{tender,selection}/public`; almost empty when checked |
-| `xarid-api-auctionx.uzex.uz` | xarid.uzex.uz → Mahalliy auksion (`/new-auction/list`) | list: `/api/Lot/GetList`; 1 open lot when checked |
-| `xarid-api-prequest.uzex.uz` | xarid.uzex.uz → Taklif so'rovi (`/request-proposal/3/list`) | list: `/api/Public/GetLots`; ~1000 open lots with customer and price — the most useful next source |
 | `new-xarid.uzex.uz` | beta front-end of xarid | uses the same APIs as xarid.uzex.uz; nothing new to scan |
 | `api.xt-xarid.uz` | already scanned | from Uzbekistan 3 requests 3 s apart all succeeded; on GitHub `host_pauses` must stay 65 |
 
@@ -126,5 +135,11 @@ it could serve as an early signal if the owner asks for it.
 A source that works only from Uzbekistan cannot run on GitHub: keep it `false` in `config.yaml` and run it from
 Uzbekistan with `--source`, as `cooperation_catalog` does. On 2026-11-11 the whole bot ran from a laptop in
 Uzbekistan for a day; on 2026-11-12 the owner moved it back to GitHub and that laptop's database became the
-`state` branch. Moving the whole bot again is the owner's decision (Muhammadbilol): the scheduler, the `state`
-database and the secrets have to move together, otherwise lots arrive twice.
+`state` branch; on 2026-11-18 he moved it to the VPS (see "How it runs in production"). Moving the whole bot
+again is the owner's decision (Muhammadbilol): the scheduler, the database and the secrets have to move together,
+otherwise lots arrive twice.
+
+Checked from the VPS on 2026-11-17: `xarid-api-prequest.uzex.uz` and `xarid-api-auctionx.uzex.uz` answer (send
+`Origin: https://xarid.uzex.uz`); Taklif so'rovi and Mahalliy auksion are scanned since 2026-11-18.
+`new.cooperation.uz`, `cabinet.cooperation.uz` and `cooperation.uz` time out from the VPS as well (data-centre
+address); `cooperation_catalog` still needs a home computer in Uzbekistan.
