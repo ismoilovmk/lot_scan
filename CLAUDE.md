@@ -70,7 +70,9 @@ GitHub as Actions secrets, which cannot be read back.
 | `storage.py` | SQLite: seen/sent lots, notes between runs |
 | `notifier.py` | message text and Telegram sending |
 | `health.py` | "platform stopped answering" alert and the daily summary |
-| `http_client.py` | requests with per-host pauses and retries |
+| `http_client.py` | requests with per-host pauses, retries and per-host proxies |
+| `bridge.py` | finds the live bridge port (see "The bridge for new.cooperation.uz") |
+| `tools/most.bat` | run on a Windows computer in Uzbekistan to be the bridge |
 | `sources/` | one module per platform; `sources/__init__.py` lists them in `ALL_SOURCES` |
 | `config.yaml` | services and their words, regions, work hours, which platforms are on |
 | `tests/` | pytest; `tests/fakes.py` has fake site, source and notifier |
@@ -79,10 +81,14 @@ Setup: Python 3.10 or newer, `pip install -r requirements-dev.txt`, `python -m p
 
 ## How matching works
 
-- A lot matches when any word of any service in `config.yaml` → `services` is found in its title, positions or
-  description. Categories are deliberately ignored: customers file lots under anything.
-- Words are substrings after normalisation (case, Uzbek letters ў қ ғ ҳ, apostrophes, Cyrillic/Latin lookalikes).
-  Write both Cyrillic and Latin spellings. A rule `a + b` needs both parts.
+- `LotFilter.match(title, details)`: a word of any service in `config.yaml` → `services` found in the title
+  (lot name or position names) is enough. A word found only in the description counts when at least two
+  different services are found in the whole text: one word in a long description is usually incidental
+  ("халат с логотипом", "перевозка грузов прицепом" for a cultivator). This rule came from reviewing all
+  113 lots sent on 2026-11-09…18. Categories are deliberately ignored: customers file lots under anything.
+- Words match at the start of a word, after normalisation (case, Uzbek letters ў қ ғ ҳ, apostrophes,
+  Cyrillic/Latin lookalikes): «orakal» is not found inside «Qorakaltak». Write both Cyrillic and Latin
+  spellings. A rule `a + b` needs both parts.
 - `tests/test_vocabulary.py` holds real catalogue names that must match and look-alikes that must not.
   The firm's own list of 18 services is there as `OWN_SERVICES`. New words come with new test lines.
 - `service_chats` sends a service to another Telegram group (freight transport does this).
@@ -110,9 +116,29 @@ for lots that passed the region filter. Find the site's JSON API in the browser'
   the offers per pass, chosen by the clock. The owner's father says most of the relevant lots are here.
 - Elektron do'kon on xarid.uzex.uz (`EShopLots`, key `uzex_eshop`) — the same shop without the local-manufacturer
   filter: a separate set of offers, same trades and the same trade page. It has its own part per pass.
-- new.cooperation.uz — e-catalog price requests to local manufacturers (`sources/cooperation.py`). It opens only
-  from an Uzbek IP, so it is off in `config.yaml` and GitHub does not scan it. From a computer in Uzbekistan run
-  `python main.py loop --source cooperation_catalog`: that checks only this platform, so nothing arrives twice.
+- new.cooperation.uz (the former cooperation.uz) — e-catalog price requests to local manufacturers
+  (`sources/cooperation.py`). It is scanned only through the bridge, see below.
+
+## The bridge for new.cooperation.uz
+
+The portal silently drops connections from data-centre addresses: from abroad, and from the VPS in Tashkent too
+(checked 2026-11-18: every app host on 185.100.53.216/.244 times out, a neighbour address in the same network
+answers; MaxMind places the VPS address in Kazakhstan). From ordinary home or office internet in Uzbekistan it
+opens (the brother's laptop, 2026-11-11). No other public host of the portal serves the price requests.
+
+So the bot reaches it through a bridge: a Windows computer in Uzbekistan runs `tools/most.bat`
+(`ssh -N -R <port> uz_vps`, remote dynamic forwarding), which opens a SOCKS5 port on the server's localhost
+that exits through that computer. `bridge.py` finds the live port (`bridge.ports` in `config.yaml`, it sends a
+SOCKS greeting because a dead tunnel's port can stay open), `main.bridged` routes `bridge.hosts` through it and,
+while no bridge answers, switches `bridge.sources` off for that pass — a skip, not a failure, so no alert.
+`--source cooperation_catalog` still runs directly, for a computer that is itself in Uzbekistan.
+
+- Verified 2026-11-18 with a test bridge from the owner's computer in Korea: the server's requests left through
+  it. Not verified: the last hop to the portal — nobody has run the bridge from Uzbekistan yet.
+- Do not run `python main.py loop --source cooperation_catalog` on a second computer while the bridge is used:
+  that is a second bot with its own database, and lots would arrive twice.
+- A cleaner fix would be a server address the portal accepts (ask Teleport DC for another address, or wait for
+  the geolocation databases to catch up); then the bridge section can simply be removed from `config.yaml`.
 
 ## Open work that needs an Uzbek IP address
 
@@ -142,4 +168,4 @@ otherwise lots arrive twice.
 Checked from the VPS on 2026-11-17: `xarid-api-prequest.uzex.uz` and `xarid-api-auctionx.uzex.uz` answer (send
 `Origin: https://xarid.uzex.uz`); Taklif so'rovi and Mahalliy auksion are scanned since 2026-11-18.
 `new.cooperation.uz`, `cabinet.cooperation.uz` and `cooperation.uz` time out from the VPS as well (data-centre
-address); `cooperation_catalog` still needs a home computer in Uzbekistan.
+address); `cooperation_catalog` goes through the bridge (see "The bridge for new.cooperation.uz").
