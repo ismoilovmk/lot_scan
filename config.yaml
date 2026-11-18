@@ -23,6 +23,10 @@ sources:
   xt_xarid: true           # xt-xarid.uz — аукционы, отборы, запросы предложений, тендеры
   uzex_civil: true         # etender.uzex.uz — раздел отбора по 69-ПКМ
   tendergpt: true          # tendergpt.uz — коммерческие закупки частных компаний
+  # xarid.uzex.uz — запрос предложений (Taklif so'rovi) и местный аукцион (Mahalliy auksion).
+  # Открываются только из Узбекистана: бот работает на сервере в Ташкенте, поэтому включены.
+  uzex_request: true
+  uzex_local_auction: true
   ebirja: true             # ebirja.uz — аукцион, отбор, тендер, запрос предложений (товарно-сырьевая биржа)
   # Milliy do'kon на xarid.uzex.uz — торги по предложениям поставщиков (подробности ниже, у shop_keywords)
   uzex_shop: true
