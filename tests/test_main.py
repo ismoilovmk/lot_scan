@@ -469,10 +469,15 @@ def test_real_config_enables_xt_xarid_with_a_minute_between_requests():
         assert key in [source.key for source in bot.ALL_SOURCES]
 
 
-def test_real_config_keeps_cooperation_catalog_off_on_github_and_lets_its_lots_through():
+def test_real_config_checks_cooperation_catalog_only_through_the_bridge_and_lets_its_lots_through():
     cfg = yaml.safe_load((Path(bot.__file__).parent / "config.yaml").read_text(encoding="utf-8"))
-    assert cfg["sources"]["cooperation_catalog"] is False   # с серверов GitHub площадка не открывается
-    assert "cooperation_catalog" in [source.key for source in bot.ALL_SOURCES]   # но по --source проверяется
+    assert cfg["sources"]["cooperation_catalog"] is True
+    # Сайт не отвечает дата-центрам. Без моста площадка должна пропускаться, а не падать каждую проверку.
+    assert "cooperation_catalog" in cfg["bridge"]["sources"]
+    assert "new.cooperation.uz" in cfg["bridge"]["hosts"]
+    assert cfg["bridge"]["ports"]
+    assert bot.bridged(cfg, "")["sources"]["cooperation_catalog"] is False
+    assert "cooperation_catalog" in [source.key for source in bot.ALL_SOURCES]   # по --source проверяется и без моста
     assert cfg["allow_unknown_region"] is True   # регион в этом каталоге не показывается: иначе лоты не пройдут
 
 
@@ -871,3 +876,66 @@ def test_cli_full_shop_checks_every_offer_in_one_pass(cli, monkeypatch, argv, ex
     (cli.project / "config.yaml").write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
     cli(*argv)
     assert spy.per_pass == expected
+
+
+# --- мост: площадки, которые открываются только через компьютер в Узбекистане ---
+
+BRIDGE = {**CFG, "sources": {"a": True, "closed": True, "off": False},
+          "bridge": {"ports": [1080], "hosts": ["closed.test", "cabinet.closed.test"], "sources": ["closed", "off"]}}
+
+
+def test_with_the_bridge_up_its_sites_go_through_it():
+    cfg = bot.bridged(BRIDGE, "socks5h://127.0.0.1:1081")
+    assert cfg["host_proxies"] == {"closed.test": "socks5h://127.0.0.1:1081",
+                                   "cabinet.closed.test": "socks5h://127.0.0.1:1081"}
+    assert cfg["sources"] == BRIDGE["sources"]
+
+
+def test_with_the_bridge_down_its_sources_are_skipped_and_nothing_is_proxied(caplog):
+    with caplog.at_level(logging.INFO):
+        cfg = bot.bridged(BRIDGE, "")
+    assert cfg["sources"] == {"a": True, "closed": False, "off": False}
+    assert not cfg.get("host_proxies")
+    assert "Мост выключен: пропускаю closed" in caplog.text
+    assert "off" not in caplog.text                      # выключенную площадку мост не касается
+    assert BRIDGE["sources"]["closed"] is True           # исходные настройки не тронуты
+
+
+def test_settings_without_a_bridge_stay_as_they_are(caplog):
+    plain = {**CFG, "sources": {"a": True}}
+    with caplog.at_level(logging.INFO):
+        assert bot.bridged(plain, "") == plain
+        assert bot.bridged(CFG, "") == CFG
+        assert bot.bridged({**plain, "bridge": None}, "") == {**plain, "bridge": None}
+    assert "Мост" not in caplog.text
+
+
+def bridge_run(monkeypatch, proxy, only=None):
+    """Проход с двумя площадками, одна из которых ходит через мост. Возвращает (итог, уведомитель, клиенты)."""
+    use_sources(monkeypatch, FakeSource([make_lot("1", source="a")], key="a"),
+                FakeSource([], key="closed", fail_listing=True))
+    monkeypatch.setattr(bot.bridge, "proxy", lambda cfg: proxy)
+    clients = []
+    monkeypatch.setattr(bot, "HttpClient", lambda **kwargs: clients.append(kwargs))
+    notifier = FakeNotifier()
+    return bot.run_once(BRIDGE, notifier, dry_run=False, only=only), notifier, clients
+
+
+def test_run_skips_bridge_sources_while_the_bridge_is_down(project, monkeypatch):
+    failed, notifier, clients = bridge_run(monkeypatch, "")
+    assert failed == []                                  # пропуск — не сбой: тревоги не будет
+    assert len(notifier.sent) == 1
+    assert clients[0]["host_proxies"] == {}
+
+
+def test_run_checks_bridge_sources_through_the_bridge_when_it_is_up(project, monkeypatch):
+    failed, _, clients = bridge_run(monkeypatch, "socks5h://127.0.0.1:1080")
+    assert failed == ["closed"]                          # площадку проверяли (в тесте она нарочно сломана)
+    assert clients[0]["host_proxies"] == {"closed.test": "socks5h://127.0.0.1:1080",
+                                          "cabinet.closed.test": "socks5h://127.0.0.1:1080"}
+
+
+def test_named_source_runs_directly_even_without_the_bridge(project, monkeypatch):
+    failed, _, clients = bridge_run(monkeypatch, "", only="closed")
+    assert failed == ["closed"]                          # с домашнего компьютера мост не нужен
+    assert clients[0]["host_proxies"] == {}

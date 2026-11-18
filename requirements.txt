@@ -1,2 +1,2 @@
-requests>=2.31
+requests[socks]>=2.31   # socks — для моста (см. bridge в config.yaml)
 PyYAML>=6.0

@@ -29,9 +29,11 @@ def _site_answer(error: Exception | None) -> str:
 
 class HttpClient:
     def __init__(self, pause: float = 0.5, timeout: float = 40, retries: int = 3,
-                 host_pauses: dict[str, float] | None = None):
+                 host_pauses: dict[str, float] | None = None, host_proxies: dict[str, str] | None = None):
         self.pause = pause
         self.host_pauses = dict(host_pauses or {})  # сайты со своим лимитом: {"api.xt-xarid.uz": 65}
+        # сайты, к которым ходим через мост: {"new.cooperation.uz": "socks5h://127.0.0.1:1080"}
+        self.proxies = {host: {"http": proxy, "https": proxy} for host, proxy in (host_proxies or {}).items()}
         self.timeout = timeout
         self.retries = retries
         self.session = requests.Session()
@@ -54,7 +56,8 @@ class HttpClient:
             if wait > 0:
                 time.sleep(wait)
             try:
-                resp = self.session.request(method, url, json=body, headers=headers, timeout=self.timeout)
+                resp = self.session.request(method, url, json=body, headers=headers, timeout=self.timeout,
+                                            proxies=self.proxies.get(host))
                 self._last[host] = time.monotonic()
                 if resp.status_code in RETRY_STATUSES:
                     raise requests.HTTPError(f"HTTP {resp.status_code}", response=resp)

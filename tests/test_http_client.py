@@ -42,9 +42,9 @@ class FakeSession:
         self.clock = clock
         self.calls = []
 
-    def request(self, method, url, json=None, headers=None, timeout=None):
+    def request(self, method, url, json=None, headers=None, timeout=None, proxies=None):
         self.calls.append({"method": method, "url": url, "json": json, "headers": headers,
-                           "timeout": timeout, "at": self.clock.now})
+                           "timeout": timeout, "proxies": proxies, "at": self.clock.now})
         answer = self.answers.pop(0)
         if isinstance(answer, Exception):
             raise answer
@@ -192,3 +192,21 @@ def test_long_retry_delay_is_kept_when_longer_than_host_pause(site):
                            host_pauses={"api.slow.test": 7})
     client.get_json(SLOW, "o")
     assert [call["at"] - 1000.0 for call in session.calls] == [0, 7, 17]   # 7 (пауза сайта), затем 10
+
+
+# --- мост: отдельные сайты идут через прокси ---
+
+def test_site_listed_in_host_proxies_is_asked_through_its_proxy(site):
+    client, session = site([FakeResponse(data=1), FakeResponse(data=2), FakeResponse(data=3)],
+                           host_proxies={"closed.test": "socks5h://127.0.0.1:1081"})
+    client.get_json("https://closed.test/list", "https://closed.test")
+    client.post_json("https://closed.test/list", "https://closed.test", {})
+    client.get_json("https://open.test/list", "https://open.test")
+    bridge = {"http": "socks5h://127.0.0.1:1081", "https": "socks5h://127.0.0.1:1081"}
+    assert [call["proxies"] for call in session.calls] == [bridge, bridge, None]
+
+
+def test_without_host_proxies_every_site_is_asked_directly(site):
+    client, session = site([FakeResponse(data=1)])
+    client.get_json("https://api.test/list", "https://site.test")
+    assert session.calls[0]["proxies"] is None

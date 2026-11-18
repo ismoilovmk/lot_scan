@@ -20,6 +20,7 @@ from pathlib import Path
 
 import yaml
 
+import bridge
 import health
 from filters import LotFilter, by_chat, fingerprint, vocabulary_signature
 from http_client import HttpClient
@@ -59,7 +60,25 @@ def is_expired(deadline: str, now: datetime) -> bool:
 
 def make_client(cfg: dict) -> HttpClient:
     return HttpClient(pause=float(cfg.get("request_pause_seconds", 0.5)),
-                      host_pauses=cfg.get("host_pauses") or {})
+                      host_pauses=cfg.get("host_pauses") or {}, host_proxies=cfg.get("host_proxies") or {})
+
+
+def bridged(cfg: dict, proxy: str) -> dict:
+    """Настройки на этот проход с учётом моста (раздел bridge в config.yaml).
+
+    Мост включён — его сайты идут через него. Выключен — его площадки пропускаются: это не сбой,
+    просто компьютер-мост сейчас не в сети. Площадку, названную в --source, это не касается:
+    с компьютера в Узбекистане она открывается и без моста.
+    """
+    bridge_cfg = cfg.get("bridge") or {}
+    if proxy:
+        return {**cfg, "host_proxies": dict.fromkeys(bridge_cfg.get("hosts") or [], proxy)}
+    enabled = cfg.get("sources") or {}
+    waiting = [key for key in bridge_cfg.get("sources") or [] if enabled.get(key)]
+    if not waiting:
+        return cfg
+    log.info("Мост выключен: пропускаю %s", ", ".join(waiting))
+    return {**cfg, "sources": {**enabled, **dict.fromkeys(waiting, False)}}
 
 
 def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: bool) -> dict:
@@ -144,7 +163,7 @@ def check_source(source, client, cfg, lot_filter, storage, notifier, dry_run: bo
 
 def run_once(cfg: dict, notifier, dry_run: bool, only: str | None = None) -> list[str]:
     """Один проход по площадкам. Возвращает ключи площадок, которые проверить не удалось."""
-    cfg = resolve_chats(cfg, os.environ, dry_run)
+    cfg = bridged(resolve_chats(cfg, os.environ, dry_run), bridge.proxy(cfg))
     client = make_client(cfg)
     lot_filter = LotFilter(cfg)
     storage = Storage(str(ROOT / "lots.db"), tashkent_now)
