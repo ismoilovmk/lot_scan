@@ -60,11 +60,20 @@ def test_matching_lot_is_sent_once(storage):
     assert notifier.sent == []
 
 
-def test_keyword_found_only_in_lot_details_still_matches(storage):
+def test_one_word_found_only_in_lot_details_is_not_enough(storage):
     source = FakeSource([make_lot("1", title="Услуги печатные")], details={"1": "баннер 3х6"})
     stats, notifier = scan(source, storage)
+    assert stats == {"listed": 1, "new": 1, "in_region": 1, "sent": 0}
+    assert notifier.sent == []
+
+
+def test_two_services_found_only_in_lot_details_still_match(storage):
+    cfg = {**CFG, "services": {"Реклама": ["баннер"], "Полиграфия": ["флаер"]}}
+    source = FakeSource([make_lot("1", title="Услуги печатные")], details={"1": "баннер 3х6 и флаеры"})
+    stats, notifier = scan(source, storage, cfg=cfg)
     assert stats["sent"] == 1
     assert "<b>Услуги печатные</b>" in notifier.sent[0]
+    assert "Совпало: баннер, флаер" in notifier.sent[0]
 
 
 def test_lot_from_priority_region_is_marked(storage):

@@ -90,7 +90,7 @@ def scan_source(source, client, cfg, lot_filter, storage, notifier, dry_run: boo
 
 def lot_messages(lot, lot_filter, cfg: dict) -> list[tuple[str, str]]:
     """Сообщения о лоте: [(чат, текст)], по одному на каждый чат, чьи услуги нашлись. Пусто — лот не подходит."""
-    groups = by_chat(lot_filter.match(lot.search_text()), cfg.get("service_chats") or {})
+    groups = by_chat(lot_filter.match(lot.title, lot.details), cfg.get("service_chats") or {})
     priority = lot_filter.priority(lot.region)
     return [(chat, format_lot(lot, services, priority)) for chat, services in groups.items()]
 

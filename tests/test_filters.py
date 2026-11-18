@@ -204,3 +204,44 @@ def test_found_services_are_split_by_their_chats():
     }
     assert by_chat(found, {}) == {"": found}
     assert by_chat({}, chats) == {}
+
+
+# --- название и описание: слово в описании весит меньше, чем слово в названии ---
+
+def test_word_in_the_title_is_enough_and_description_adds_its_services():
+    f = LotFilter(SERVICES)
+    assert f.match("Баннер", "тип печати: DTF") == {"Баннеры": ["баннер"], "Печать на одежде": ["dtf"]}
+    assert f.match("Баннер", "Картофельный крахмал") == {"Баннеры": ["баннер"]}
+
+
+def test_one_service_only_in_the_description_is_not_enough():
+    f = LotFilter(SERVICES)
+    assert f.match("Флаги организаций", "ткань, banner и ещё раз баннер") == {}
+    assert f.match("", "баннер") == {}
+
+
+def test_two_services_in_the_description_are_enough():
+    f = LotFilter(SERVICES)
+    assert f.match("Организация мероприятия", "баннер 3х6\nфутболка: чоп этиш") == {
+        "Баннеры": ["баннер"], "Печать на одежде": ["Футболка + чоп"]}
+
+
+def test_rule_split_between_title_and_description_counts_as_description():
+    f = LotFilter(SERVICES)
+    assert f.match("Футболка", "чоп этиш") == {}                      # одна услуга, и та не в названии целиком
+    assert f.match("Футболка, banner", "чоп этиш") == {"Баннеры": ["banner"], "Печать на одежде": ["Футболка + чоп"]}
+
+
+def test_word_is_found_only_at_the_start_of_a_word():
+    f = LotFilter({"services": {"Плёнка": ["orakal", "чоп", "ролл-ап"]}})
+    assert f.match("Qorakaltak MFY") == {}                 # махалля, а не оракал
+    assert f.match("xatchop lentasi, хатчоп") == {}
+    assert f.match("Oq orakal; (orakal)") == {"Плёнка": ["orakal"]}
+    assert f.match("китоб чоплаш, ролл-апы") == {"Плёнка": ["чоп", "ролл-ап"]}
+    assert f.match("фото-чоп, «чоп», 3чоп") == {"Плёнка": ["чоп"]}
+
+
+def test_rule_with_symbols_is_taken_literally():
+    f = LotFilter({"services": {"А": ["3d (объем)", "a.b"]}})
+    assert f.match("буквы 3D (объем)") == {"А": ["3d (объем)"]}
+    assert f.match("axb") == {}

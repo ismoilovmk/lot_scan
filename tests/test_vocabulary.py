@@ -234,3 +234,43 @@ def test_other_transport_is_not_freight(name):
 
 def test_freight_lots_go_to_their_own_chat():
     assert CONFIG["service_chats"] == {"Перевозка грузов": "TELEGRAM_CHAT_ID_TRANSPORT"}
+
+
+# --- лишние срабатывания из настоящих лотов (11–18.11.2026): название лота и кусок его описания ---
+
+@pytest.mark.parametrize("title, details", [
+    ("Мотокультиватор", "обработка тяжелых почв, вспашка, культивация, перевозка грузов с помощью прицепа"),
+    ("Флаги организаций и ведомств", "изображение внешнего вида флага и логотип организации загружено в виде файла"),
+    ("Халат медицинский многоразового использования", "халат медицинский с логотипом размер 42-60"),
+    ("Канцелярский набор (настольный органайзер)", "визитки, скрепки, карандаши. Изготовлен данный товар из прочного пластика"),
+    ("Набор канцелярский подарочный", "кардхолдер подставка (визитка ёки пластик карталар учун ушлагич)"),
+    ("қурилиш", "сальник коробки передач; силикон; скотч малярный; акрил"),
+    ("Ofis tovarlari", "skotch 12 mm; стикер stiker yopishqoq qirrali qog'oz 45 × 12 mm"),
+    ("Флаг Республики Узбекистан", "для эксплуатации в наружных условиях, стойкость к ультрафиолету. Печать выполняется методом сублимации"),
+    ("L-13. Umumta’lim maktablari o‘quv ustaxonasi uchun jihozlar", "ruletka; металл ўлчов чизғичи; плакатлар тўплами xavfsizlik texnikasi"),
+    ("Маргилон шаҳар амфитеатр иншооти қурилишига материаллар", "профиль металлический; армирующий баннер; куйма"),
+    ("Farg'ona harbiy qismlarga suyultirilgan gaz yetkazib berish", "yuk tashish avtomobillari kamida 3 dona bo'lishi shart"),
+    ("Аренда оборудования", "viloyat milliy stendi kompleks ijarasi"),
+    ("Услуга по организации и проведению мероприятий", "проведение рекламно-интерактивной программы на стенде"),
+    ("Videoroliklar seriyasini suratga olish", "Услуга съемки рекламного видеоролика; reklama videoroligini suratga olish xizmati"),
+    ("Yangi O'zbekiston bolalari", "logotip bo'rtib chiqqan individual quti; xatchop lentasi; futbolka"),
+    ("Oltiariq, Yozyovon tumanlaridagi “Uzumchi”, “Qorakaltak” MFYlarda ta'mirlash", ""),
+    ("O'zmilliybank uchun yuk tashishga mo'ljallangan lift moslamasini xarid qilish — Лифт грузовой", ""),
+    ("Стикер; Карандаши простые и цветные; Маркер; Ручка канцелярская; Скрепки металлические", ""),
+])
+def test_incidental_words_do_not_make_a_lot_ours(title, details):
+    assert FILTER.match(title, details) == {}, (title, FILTER.match(title, details))
+
+
+@pytest.mark.parametrize("title, details, service", [
+    ("«Zolushka» spektaklini qo'yish uchun xizmatlar", "полиграфия хизматлари; услуга распечатка оракала по эскизам; баннер ишлаб чиқариш", "Баннеры"),
+    ("Сумка шоппер", "брендирование выполнено методом DTF-печати с нанесением логотипа на две стороны", "Печать на одежде (DTF)"),
+    ("Услуга по организации и проведению мероприятий", "оклейка плёнкой oracal; широкоформатная печать на баннерном полотне", "Оракал и плёнка"),
+    ("Баннер", "тип изделия: рекламный баннер; широкоформатная печать", "Баннеры"),
+    ("Стикер; Печатная продукция", "", "Оракал и плёнка"),
+    ("Наклейка на стекло", "", "Оракал и плёнка"),
+    ("Конверт почтовый бумажный", "konvertning orqa qismiga logotip, reklama materiallari rangli usulda chop etiladi", "Сувениры и логотипы"),
+    ("Banner 540 g/m frontlit; oq orakal", "", "Оракал и плёнка"),
+])
+def test_real_lots_of_ours_are_still_found(title, details, service):
+    assert service in FILTER.match(title, details), (title, FILTER.match(title, details))

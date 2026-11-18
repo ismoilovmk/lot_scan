@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 # Узбекская кириллица -> ближайшие русские буквы, чтобы "Фарғона" и "Фаргона" совпадали
 _LETTERS = str.maketrans({"ё": "е", "ў": "у", "қ": "к", "ғ": "г", "ҳ": "х"})
@@ -29,9 +30,14 @@ def _forms(values) -> list[str]:
     return [normalize(word) for word in _written(values)]
 
 
-def _rules(values) -> list[tuple[str, list[str]]]:
+def _word(part: str) -> re.Pattern:
+    """Слово ищется с начала слова: «orakal» есть в «oq orakal», но не в названии махалли «Qorakaltak»."""
+    return re.compile(r"(?<!\w)" + re.escape(part))
+
+
+def _rules(values) -> list[tuple[str, list[re.Pattern]]]:
     """Правила услуги: [(как написано, части)]. «чоп + футболка» — в тексте должны быть обе части."""
-    rules = [(rule, [part for part in map(normalize, rule.split("+")) if part]) for rule in _written(values)]
+    rules = [(rule, [_word(part) for part in map(normalize, rule.split("+")) if part]) for rule in _written(values)]
     return [(rule, parts) for rule, parts in rules if parts]
 
 
@@ -75,14 +81,23 @@ class LotFilter:
         self.priority_region = str(cfg.get("priority_region") or "")
         self.allow_unknown_region = bool(cfg.get("allow_unknown_region", True))
 
-    def match(self, text: str) -> dict[str, list[str]]:
-        """Услуги, о которых лот: {услуга: найденные слова}. Пусто — лот не подходит."""
+    def match(self, title: str, details: str = "") -> dict[str, list[str]]:
+        """Услуги, о которых лот: {услуга: найденные слова}. Пусто — лот не подходит.
+
+        Слова в названии достаточно. Описания длинные, и слово там часто случайное («халат с логотипом»,
+        «перевозка грузов прицепом» у культиватора), поэтому лот без слова в названии подходит,
+        только если в нём нашлись хотя бы две разные услуги.
+        """
+        whole = self._services(f"{title}\n{details}")
+        return whole if len(whole) >= 2 or self._services(title) else {}
+
+    def _services(self, text: str) -> dict[str, list[str]]:
         text = normalize(text)
         for phrase in self.excludes:
             text = text.replace(phrase, " ")
         found = {}
         for name, rules in self.services:
-            words = [rule for rule, parts in rules if all(part in text for part in parts)]
+            words = [rule for rule, parts in rules if all(part.search(text) for part in parts)]
             if words:
                 found[name] = words
         return found
