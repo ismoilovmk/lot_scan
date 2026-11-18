@@ -1,1 +1,2 @@
-*.sh text eol=lf
+# Файлы .bat должны иметь переводы строк Windows, иначе cmd может не найти метку для goto
+*.bat text eol=crlf
